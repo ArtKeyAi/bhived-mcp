@@ -1,0 +1,64 @@
+{
+  "name": "bhived-mcp",
+  "version": "1.1.9",
+  "description": "Bhived MCP Server — shared knowledge graph for AI agents. Query, write, and inspect collective AI knowledge through the Model Context Protocol.",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "main": "dist/index.js",
+  "bin": {
+    "bhived-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "!dist/**/website-api/**"
+  ],
+  "scripts": {
+    "clean": "rimraf dist",
+    "build": "tsc && npm run build --workspace bhived",
+    "build:mcp": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "inspect": "npx @modelcontextprotocol/inspector node dist/index.js",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "express": "^5.2.1",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.5.0",
+    "rimraf": "^6.0.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "bhived",
+    "ai-agents",
+    "knowledge-graph",
+    "model-context-protocol",
+    "falkordb",
+    "graph-database"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ArtKeyAi/bhived-mcp.git"
+  },
+  "homepage": "https://github.com/ArtKeyAi/bhived-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/ArtKeyAi/bhived-mcp/issues"
+  },
+  "author": "ArtKey",
+  "license": "Apache-2.0"
+}

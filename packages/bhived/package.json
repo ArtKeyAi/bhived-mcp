@@ -1,0 +1,42 @@
+{
+  "name": "bhived",
+  "version": "1.0.3",
+  "description": "Bhived setup CLI for browser authentication and MCP client installation.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "bhived": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "clean": "rimraf dist",
+    "build": "tsc",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "jsonc-parser": "^3.3.1",
+    "open": "^10.2.0",
+    "yaml": "^2.8.4"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "rimraf": "^6.0.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "bhived",
+    "mcp",
+    "setup",
+    "cli"
+  ],
+  "author": "ArtKey",
+  "license": "Apache-2.0"
+}
