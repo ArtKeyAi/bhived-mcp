@@ -9,7 +9,7 @@
  * MCP servers running as subprocesses.
  */
 
-import { spawn as nodeSpawn, execSync, type ChildProcess } from "node:child_process";
+import { execFileSync, type ChildProcess } from "node:child_process";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import {
@@ -44,6 +44,8 @@ export interface SpawnOptions {
 
 export class ChildMcpManager {
     private healthInterval: ReturnType<typeof setInterval> | null = null;
+    private healthCheckRunning = false;
+    private readonly stopping = new Set<string>();
 
     /**
      * Spawn a child MCP process, connect to it, and discover its tools.
@@ -100,15 +102,14 @@ export class ChildMcpManager {
                 `  timeout: ${connectTimeout}ms (${needsDownload ? "extended for package download" : "standard"})`
             );
 
-            // 1. Create the stdio transport with stderr piped for diagnostics
-            //    The SDK handles default env inheritance (PATH, APPDATA, etc.)
-            //    automatically inside start(). We only pass MCP-specific env vars.
+            // 1. Create the stdio transport with stderr piped for diagnostics.
+            //    The SDK merges safe default env vars with these MCP-specific overrides.
             transport = new StdioClientTransport({
                 command: mcpConfig.command,
                 args: mcpConfig.args,
                 env: mcpConfig.env && Object.keys(mcpConfig.env).length > 0
                     ? mcpConfig.env
-                    : undefined,  // Let SDK use its own defaults when no custom env needed
+                    : undefined,
                 stderr: "pipe",
             });
 
@@ -139,14 +140,9 @@ export class ChildMcpManager {
 
             // 3. Discover tools
             const { tools: rawTools } = await client.listTools();
-            const tools: ChildMcpTool[] = rawTools.map((tool) => ({
-                name: tool.name,
-                description: tool.description ?? "",
-                inputSchema: (tool.inputSchema as Record<string, unknown>) ?? {},
-            }));
+            const tools = this.normalizeTools(rawTools);
 
-            // 4. Get a reference to the underlying child process from transport
-            //    The SDK stores it as `_process` after start() completes
+            // 4. Get a reference to the underlying child process from transport when available
             const childProcess = this.extractChildProcess(transport, name);
 
             // 5. Build the registry entry
@@ -218,9 +214,8 @@ export class ChildMcpManager {
      *
      * Flow:
      *   1. Close the MCP client (sends SIGTERM via transport)
-     *   2. Wait up to 5s for process to exit
-     *   3. SIGKILL if still alive
-     *   4. Remove from registry
+     *   2. Force kill only if close fails or times out
+     *   3. Remove from registry
      */
     async stop(mcpName: string): Promise<void> {
         const entry = childMcpRegistry.get(mcpName);
@@ -230,33 +225,27 @@ export class ChildMcpManager {
 
         console.error(`[ChildMcpManager] Stopping '${mcpName}'...`);
 
+        this.stopping.add(mcpName);
         try {
-            // client.close() will close the transport which sends SIGTERM
-            await this.raceWithTimeout(
-                entry.client.close(),
-                5000,
-                "Client close timed out"
-            );
-        } catch {
-            // If close fails, force kill
             try {
-                entry.process.kill("SIGKILL");
+                // client.close() will close the transport which sends SIGTERM
+                await this.raceWithTimeout(
+                    entry.client.close(),
+                    5000,
+                    "Client close timed out"
+                );
             } catch {
-                // Process may already be dead
+                // If close fails, force kill
+                this.killProcess(entry.process);
             }
-        }
 
-        // Ensure the process is dead
-        if (!entry.process.killed) {
-            try {
-                entry.process.kill("SIGKILL");
-            } catch {
-                // Process may already be dead
+            if (childMcpRegistry.get(mcpName) === entry) {
+                childMcpRegistry.remove(mcpName);
             }
+            console.error(`[ChildMcpManager] Stopped '${mcpName}'`);
+        } finally {
+            this.stopping.delete(mcpName);
         }
-
-        childMcpRegistry.remove(mcpName);
-        console.error(`[ChildMcpManager] Stopped '${mcpName}'`);
     }
 
     /**
@@ -293,34 +282,45 @@ export class ChildMcpManager {
         const interval = config.childHealthInterval;
         console.error(`[ChildMcpManager] Health monitor started (interval: ${interval}ms)`);
 
-        this.healthInterval = setInterval(async () => {
-            const entries = childMcpRegistry.list();
-            for (const entry of entries) {
-                if (entry.status === "crashed") continue;
+        this.healthInterval = setInterval(() => {
+            if (this.healthCheckRunning) return;
 
-                const name = childMcpRegistry.names().find(
-                    (n) => childMcpRegistry.get(n) === entry
+            this.healthCheckRunning = true;
+            this.checkHealthNow().catch((error: unknown) => {
+                console.error(
+                    `[ChildMcpManager] Health monitor failed: ${error instanceof Error ? error.message : String(error)}`
                 );
-                if (!name) continue;
-
-                try {
-                    // Ping by listing tools — lightweight health check
-                    await this.raceWithTimeout(
-                        entry.client.listTools(),
-                        5000,
-                        "Health check timed out"
-                    );
-                } catch {
-                    console.error(`[ChildMcpManager] Health check failed for '${name}' — deactivating automatically`);
-                    childMcpRegistry.remove(name);
-                }
-            }
+            }).finally(() => {
+                this.healthCheckRunning = false;
+            });
         }, interval);
 
         // Don't let the health monitor prevent process exit
         if (this.healthInterval.unref) {
             this.healthInterval.unref();
         }
+    }
+
+    /**
+     * Run a one-time health check for all registered child MCPs.
+     */
+    async checkHealthNow(): Promise<void> {
+        const entries = childMcpRegistry.entries();
+        await Promise.all(entries.map(async ([name, entry]) => {
+            if (entry.status === "crashed") return;
+
+            try {
+                const { tools: rawTools } = await this.raceWithTimeout(
+                    entry.client.listTools(),
+                    5000,
+                    "Health check timed out"
+                );
+                entry.tools = this.normalizeTools(rawTools);
+            } catch {
+                console.error(`[ChildMcpManager] Health check failed for '${name}' — stopping automatically`);
+                await this.stopUnhealthy(name, entry);
+            }
+        }));
     }
 
     /**
@@ -355,13 +355,7 @@ export class ChildMcpManager {
                 );
                 // Force kill as last resort
                 const entry = childMcpRegistry.get(name);
-                if (entry?.process && !entry.process.killed) {
-                    try {
-                        entry.process.kill("SIGKILL");
-                    } catch {
-                        // Already dead
-                    }
-                }
+                this.killProcess(entry?.process);
                 childMcpRegistry.remove(name);
             }
         });
@@ -375,13 +369,7 @@ export class ChildMcpManager {
             // On timeout, force kill everything remaining
             for (const name of childMcpRegistry.names()) {
                 const entry = childMcpRegistry.get(name);
-                if (entry?.process && !entry.process.killed) {
-                    try {
-                        entry.process.kill("SIGKILL");
-                    } catch {
-                        // Already dead
-                    }
-                }
+                this.killProcess(entry?.process);
                 childMcpRegistry.remove(name);
             }
         });
@@ -393,27 +381,41 @@ export class ChildMcpManager {
      * Stop all child MCPs that belong to a specific skill.
      */
     async stopBySkill(skillName: string): Promise<string[]> {
-        const entries = childMcpRegistry.listBySkill(skillName);
         const stoppedNames: string[] = [];
 
-        for (const entry of entries) {
-            const name = childMcpRegistry.names().find(
-                (n) => childMcpRegistry.get(n) === entry
-            );
-            if (name) {
-                try {
-                    await this.stop(name);
-                    stoppedNames.push(name);
-                } catch (error) {
-                    console.error(
-                        `[ChildMcpManager] Error stopping skill-bundled MCP '${name}': ` +
-                        `${error instanceof Error ? error.message : String(error)}`
-                    );
-                }
+        for (const [name, entry] of childMcpRegistry.entries()) {
+            if (entry.source !== `skill:${skillName}`) continue;
+
+            try {
+                await this.stop(name);
+                stoppedNames.push(name);
+            } catch (error) {
+                console.error(
+                    `[ChildMcpManager] Error stopping skill-bundled MCP '${name}': ` +
+                    `${error instanceof Error ? error.message : String(error)}`
+                );
             }
         }
 
         return stoppedNames;
+    }
+
+    private async stopUnhealthy(name: string, entry: ChildMcpEntry): Promise<void> {
+        entry.status = "crashed";
+        entry.tools = [];
+        try {
+            await this.raceWithTimeout(
+                entry.client.close(),
+                3000,
+                "Unhealthy client close timed out"
+            );
+        } catch {
+            this.killProcess(entry.process);
+        } finally {
+            if (childMcpRegistry.get(name) === entry) {
+                childMcpRegistry.remove(name);
+            }
+        }
     }
 
     // ── Private helpers ──────────────────────────────────────────
@@ -429,16 +431,13 @@ export class ChildMcpManager {
      * We also check for the `pid` getter (public API since SDK v1.x)
      * to avoid relying solely on private internals.
      */
-    private extractChildProcess(transport: StdioClientTransport, mcpName: string): ChildProcess {
+    private extractChildProcess(transport: StdioClientTransport, mcpName: string): ChildProcess | undefined {
         // Approach 1: Try the internal `_process` property (SDK v1.x stores it here)
         const transportAny = transport as unknown as { _process?: ChildProcess };
         if (transportAny._process) {
             return transportAny._process;
         }
 
-        // Approach 2: If we have a PID from the public getter, we can't get the
-        // ChildProcess object from it, but at least we know it's running.
-        // Fall back to a sentinel with a warning.
         const pid = transport.pid;
         console.error(
             `[ChildMcpManager] Warning: Could not extract child process object for '${mcpName}'.` +
@@ -446,22 +445,21 @@ export class ChildMcpManager {
             " Crash detection may not work — process lifecycle managed by SDK."
         );
 
-        // Create a sentinel process so the rest of the code doesn't break.
-        // Using a no-op command on Windows (cmd /c exit) or Unix (true)
-        const sentinel = process.platform === "win32"
-            ? nodeSpawn("cmd", ["/c", "exit"], { stdio: "ignore" })
-            : nodeSpawn("true", [], { stdio: "ignore" });
-        return sentinel;
+        return undefined;
     }
 
     /**
      * Set up a crash handler on the child process.
      * When the process exits unexpectedly, mark it as crashed.
      */
-    private setupCrashHandler(name: string, childProc: ChildProcess): void {
+    private setupCrashHandler(name: string, childProc: ChildProcess | undefined): void {
+        if (!childProc) return;
+
         childProc.on("exit", (code, signal) => {
+            if (this.stopping.has(name)) return;
+
             const entry = childMcpRegistry.get(name);
-            if (entry && entry.status === "active") {
+            if (entry?.process === childProc && entry.status === "active") {
                 console.error(
                     `[ChildMcpManager] Child '${name}' exited unexpectedly ` +
                     `(code: ${code}, signal: ${signal}) — deactivating automatically`
@@ -471,8 +469,10 @@ export class ChildMcpManager {
         });
 
         childProc.on("error", (err) => {
+            if (this.stopping.has(name)) return;
+
             const entry = childMcpRegistry.get(name);
-            if (entry) {
+            if (entry?.process === childProc) {
                 console.error(
                     `[ChildMcpManager] Child '${name}' error: ${err.message} — deactivating automatically`
                 );
@@ -491,7 +491,7 @@ export class ChildMcpManager {
 
         try {
             const whereCmd = process.platform === "win32" ? "where" : "which";
-            execSync(`${whereCmd} ${command}`, { stdio: "ignore" });
+            execFileSync(whereCmd, [command], { stdio: "ignore" });
         } catch {
             const installHints: Record<string, string> = {
                 uvx: "Install uv: https://docs.astral.sh/uv/getting-started/installation/",
@@ -552,6 +552,24 @@ export class ChildMcpManager {
 
         if (hints.length === 0) return "";
         return "\n\n💡 Hints:\n" + hints.map((h) => `- ${h}`).join("\n");
+    }
+
+    private normalizeTools(rawTools: Array<{ name: string; description?: string; inputSchema?: unknown }>): ChildMcpTool[] {
+        return rawTools.map((tool) => ({
+            name: tool.name,
+            description: tool.description ?? "",
+            inputSchema: (tool.inputSchema as Record<string, unknown>) ?? {},
+        }));
+    }
+
+    private killProcess(childProc: ChildProcess | undefined): void {
+        if (!childProc || childProc.exitCode !== null || childProc.signalCode !== null) return;
+
+        try {
+            childProc.kill("SIGKILL");
+        } catch {
+            // Process may already be dead or managed by the SDK transport.
+        }
     }
 
     /**

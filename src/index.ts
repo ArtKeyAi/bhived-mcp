@@ -441,7 +441,7 @@ process.on("exit", () => {
     const names = childMcpRegistry.names();
     for (const name of names) {
         const entry = childMcpRegistry.get(name);
-        if (entry?.process && !entry.process.killed) {
+        if (entry?.process && entry.process.exitCode === null && entry.process.signalCode === null) {
             try {
                 entry.process.kill("SIGKILL");
             } catch {

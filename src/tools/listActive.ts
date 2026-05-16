@@ -84,24 +84,22 @@ export function registerListActiveTool(server: McpServer): void {
 
                 // ── MCPs section ────────────────────────────────────────
                 if (showAll || params.type === "mcps") {
-                    const mcps = childMcpRegistry.list();
+                    const mcpEntries = childMcpRegistry.entries();
+                    const mcps = mcpEntries.map(([, entry]) => entry);
                     if (mcps.length === 0) {
                         sections.push("## 🔌 Active MCPs\n\n*No child MCPs currently running.*\n");
                     } else {
                         let mcpSection = "## 🔌 Active MCPs\n\n";
 
                         // Group by source
-                        const standalone = mcps.filter((m) => m.source === "standalone");
-                        const skillBundled = mcps.filter((m) => m.source !== "standalone");
+                        const standalone = mcpEntries.filter(([, entry]) => entry.source === "standalone");
+                        const skillBundled = mcpEntries.filter(([, entry]) => entry.source !== "standalone");
 
                         if (standalone.length > 0) {
                             mcpSection += "### Standalone MCPs\n\n";
                             mcpSection += "| Name | Status | Tools | Spawned |\n";
                             mcpSection += "|------|--------|-------|---------|\n";
-                            for (const entry of standalone) {
-                                const name = childMcpRegistry.names().find(
-                                    (n) => childMcpRegistry.get(n) === entry
-                                ) ?? "unknown";
+                            for (const [name, entry] of standalone) {
                                 const toolNames = entry.tools.map((t) => t.name).join(", ") || "–";
                                 const status = entry.status === "active" ? "✅" : "💀";
                                 mcpSection += `| ${name} | ${status} | ${toolNames} | ${entry.spawned_at.toISOString()} |\n`;
@@ -113,10 +111,7 @@ export function registerListActiveTool(server: McpServer): void {
                             mcpSection += "### Skill-Bundled MCPs\n\n";
                             mcpSection += "| Name | Source | Status | Tools |\n";
                             mcpSection += "|------|--------|--------|-------|\n";
-                            for (const entry of skillBundled) {
-                                const name = childMcpRegistry.names().find(
-                                    (n) => childMcpRegistry.get(n) === entry
-                                ) ?? "unknown";
+                            for (const [name, entry] of skillBundled) {
                                 const toolNames = entry.tools.map((t) => t.name).join(", ") || "–";
                                 const status = entry.status === "active" ? "✅" : "💀";
                                 mcpSection += `| ${name} | ${entry.source} | ${status} | ${toolNames} |\n`;
@@ -125,11 +120,8 @@ export function registerListActiveTool(server: McpServer): void {
                         }
 
                         // Combined tools list
-                        const allTools = mcps.flatMap((m) => {
-                            const mcpName = childMcpRegistry.names().find(
-                                (n) => childMcpRegistry.get(n) === m
-                            ) ?? "unknown";
-                            return m.tools.map((t) => ({
+                        const allTools = mcpEntries.flatMap(([mcpName, entry]) => {
+                            return entry.tools.map((t) => ({
                                 mcp: mcpName,
                                 tool: t.name,
                                 description: t.description,

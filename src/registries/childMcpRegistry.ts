@@ -22,7 +22,7 @@ export interface ChildMcpTool {
 
 export interface ChildMcpEntry {
     /** The spawned child process */
-    process: ChildProcess;
+    process?: ChildProcess;
     /** MCP SDK client connected to the child */
     client: Client;
     /** Tools discovered via client.listTools() */
@@ -82,6 +82,11 @@ export class ChildMcpRegistry {
     /** List all child MCP entries. */
     list(): ChildMcpEntry[] {
         return Array.from(this.children.values());
+    }
+
+    /** List all child MCP entries with their registry names. */
+    entries(): Array<[string, ChildMcpEntry]> {
+        return Array.from(this.children.entries());
     }
 
     /** Check if a child MCP is registered. */
