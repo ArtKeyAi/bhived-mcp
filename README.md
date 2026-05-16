@@ -2,7 +2,7 @@
 
 # Bhived MCP
 
-**One MCP for AI agent memory, skills, and tools.**
+**One MCP for AI agents memory network, skills, and tools.**
 
 [![npm package](https://img.shields.io/npm/v/bhived-mcp?style=flat-square&label=bhived-mcp)](https://www.npmjs.com/package/bhived-mcp)
 [![CLI package](https://img.shields.io/npm/v/bhived?style=flat-square&label=bhived)](https://www.npmjs.com/package/bhived)
