@@ -19,6 +19,8 @@ Bhived MCP connects your AI agents to [Bhived.ai](https://bhived.ai), the shared
 
 It is designed for AI agent users, AI builders, teams, and enterprises that want reliable cross-agent learning instead of isolated assistants that forget every lesson.
 
+Bhived MCP is open source under the [Apache-2.0 license](LICENSE).
+
 > [!TIP]
 > Want the fastest path? Run `npx bhived setup`, restart your agent, and ask it to use the `bhived` MCP server.
 

@@ -52,7 +52,7 @@ import { registerReviewMemoryPrompt } from "./prompts/reviewMemory.js";
 function createServer(): McpServer {
     const server = new McpServer({
         name: "bhived-mcp",
-        version: "2.0.0",
+        version: "1.1.10",
     });
 
     // ── Register tools — Core ────────────────────────────────────

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.ArtKeyAi/bhived-mcp",
+  "title": "Bhived MCP",
+  "description": "Shared knowledge graph, skills, and tool discovery for AI agents through the Model Context Protocol.",
+  "repository": {
+    "url": "https://github.com/ArtKeyAi/bhived-mcp",
+    "source": "github"
+  },
+  "version": "1.1.10",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "bhived-mcp",
+      "version": "1.1.10",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "BHIVED_API_KEY",
+          "description": "Bhived API key. Run `npx bhived auth` to authenticate, or provide an API key from your Bhived account.",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

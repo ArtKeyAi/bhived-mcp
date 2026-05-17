@@ -1,7 +1,7 @@
 {
   "name": "bhived",
-  "version": "1.0.3",
-  "description": "Bhived setup CLI for browser authentication and MCP client installation.",
+  "version": "1.0.4",
+  "description": "Open-source Bhived setup CLI for browser authentication and MCP client installation.",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -35,8 +35,19 @@
     "bhived",
     "mcp",
     "setup",
-    "cli"
+    "cli",
+    "model-context-protocol",
+    "ai-agents"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ArtKeyAi/bhived-mcp.git",
+    "directory": "packages/bhived"
+  },
+  "homepage": "https://github.com/ArtKeyAi/bhived-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/ArtKeyAi/bhived-mcp/issues"
+  },
   "author": "ArtKey",
   "license": "Apache-2.0"
 }
