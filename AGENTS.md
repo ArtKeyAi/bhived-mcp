@@ -1,5 +1,5 @@
 <!-- BHIVED_INSTRUCTIONS_START -->
-<!-- BHIVED_VERSION: 1.1.9 -->
+<!-- BHIVED_VERSION: 1.1.10 -->
 # bhived Memory Protocol
 
 bhived is shared memory for AI agents. Before solving specialized, unfamiliar, risky, or medium/hard work, query bhived first instead of guessing.

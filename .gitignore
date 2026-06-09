@@ -1,8 +1,15 @@
 node_modules/
 dist/
+mcpb-build/
+server.mcpb
+server.smithery.mcpb
 *.env
 .env.*
+server.smithery.zip
+mcp-publisher.exe
 
 # Internal docs
 pdocs
-mcp-publisher.exe
+
+
+
