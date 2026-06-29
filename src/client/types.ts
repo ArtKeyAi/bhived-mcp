@@ -16,6 +16,18 @@ export interface HealthStatus {
 
 // ─── Query ──────────────────────────────────────────────────────────
 
+/**
+ * Read scope for /v1/query and /v2/query.
+ * - `team_plus_global` (default): the caller's team hive(s) + the global public hive.
+ * - `team_only`: only the caller's team hive(s). An empty team hive returns no
+ *    results — there is NO fallback to public.
+ * - `global_only`: only the global public hive.
+ *
+ * Tenancy is derived server-side from the API key; `scope` only narrows which of
+ * the key's readable hives are searched. It cannot grant access to another tenant.
+ */
+export type ReadScope = "team_plus_global" | "team_only" | "global_only";
+
 export interface QueryParams {
     query: string;
     top_k?: number;
@@ -23,10 +35,14 @@ export interface QueryParams {
     include_warnings?: boolean;
     include_disputed?: boolean;
     context?: string;
+    /** Optional read scope. Defaults server-side to `team_plus_global`. */
+    scope?: ReadScope;
 }
 
 export interface QueryMemory {
-    id: string;
+    /** Some pipelines return `memory_id` instead of `id`; readers must handle both. */
+    id?: string;
+    memory_id?: string;
     text: string;
     title: string;
     type: "instruction" | "mistake" | "update" | "note";
@@ -53,6 +69,8 @@ export interface SkillCapabilityMeta {
     mcp_count?: number;
     mcp_names?: string[];
     usage_count?: number;
+    /** Backend may report this instead of `usage_count`. */
+    activation_count?: number;
     success_rate?: number;
 }
 
@@ -62,6 +80,8 @@ export interface McpCapabilityMeta {
     description?: string;
     tools_hint?: string[];
     usage_count?: number;
+    /** Backend may report this instead of `usage_count`. */
+    activation_count?: number;
     success_rate?: number;
 }
 
@@ -80,19 +100,87 @@ export interface QueryWarning {
     contradicts_memory_id?: string;
 }
 
+/**
+ * A contradicting memory pair. The live API returns a FLAT shape
+ * (`memory_a_id` / `memory_a_text` / `memory_b_id` / `memory_b_text` / `confidence`);
+ * older docs described a nested `{memory_a, memory_b, dispute_type}` shape. Readers
+ * must tolerate both — every field is optional.
+ */
 export interface DisputedPair {
-    memory_a: QueryMemory;
-    memory_b: QueryMemory;
-    dispute_type: string;
+    // Flat shape (live API)
+    confidence?: number;
+    memory_a_id?: string;
+    memory_a_text?: string;
+    memory_b_id?: string;
+    memory_b_text?: string;
+    // Legacy nested shape
+    dispute_type?: string;
+    memory_a?: QueryMemory;
+    memory_b?: QueryMemory;
 }
 
+/** A "what was already tried and abandoned" note returned by the read pipeline. */
+export interface FailedApproach {
+    id?: string;
+    memory_id?: string;
+    text?: string;
+    title?: string;
+    type?: string;
+    reason?: string;
+    [key: string]: unknown;
+}
+
+/** `ScoredMemory` is the wire name for the ranked-memory shape; identical to QueryMemory. */
+export type ScoredMemory = QueryMemory;
+
 export interface QueryResult {
+    query?: string;
     query_id: string;
     recommendations: QueryMemory[];
     episodes?: QueryEpisode[];
     warnings?: QueryWarning[];
+    /** Live API key is `disputed`; older docs say `disputed_pairs`. Readers accept both. */
+    disputed?: DisputedPair[];
     disputed_pairs?: DisputedPair[];
-    total_results: number;
+    failed_approaches?: FailedApproach[];
+    total_results?: number;
+    metadata?: Record<string, unknown>;
+}
+
+/**
+ * `ReadResultV2` envelope from POST /v2/query.
+ *
+ * Same request body as /v1/query (including `scope`), but team-hive and
+ * public-hive results are returned as SEPARATE sections rather than one merged
+ * `recommendations` list. Each section receives the request's full `top_k`.
+ *
+ * Behavior:
+ * - Non-team caller → `team_*` lists are empty.
+ * - `scope=team_only`   → `public_*` empty.
+ * - `scope=global_only` → `team_*` empty.
+ * - `query_id` is returned and is the value to pass back on a subsequent write
+ *   (it is equivalent to the v1 `query_id` for F1 linking).
+ */
+export interface ReadResultV2 {
+    query?: string;
+    query_id: string;
+
+    team_recommendations: ScoredMemory[];
+    public_recommendations: ScoredMemory[];
+
+    team_warnings?: QueryWarning[];
+    public_warnings?: QueryWarning[];
+
+    team_episodes?: QueryEpisode[];
+    public_episodes?: QueryEpisode[];
+
+    team_disputed?: DisputedPair[];
+    public_disputed?: DisputedPair[];
+
+    team_failed_approaches?: FailedApproach[];
+    public_failed_approaches?: FailedApproach[];
+
+    metadata?: Record<string, unknown>;
 }
 
 // ─── Write ──────────────────────────────────────────────────────────

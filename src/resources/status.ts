@@ -5,6 +5,7 @@
  */
 
 import { restClient } from "../client/restClient.js";
+import { getTenancy } from "../tenancy.js";
 
 export async function getStatusContent(): Promise<string> {
     const lines: string[] = [];
@@ -12,6 +13,23 @@ export async function getStatusContent(): Promise<string> {
     lines.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     lines.push("📊 Bhived System Status");
     lines.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    lines.push("");
+
+    // Tenancy / scope — what this key reads and writes
+    const t = getTenancy();
+    lines.push("  🏷️ Tenancy (scope of this API key):");
+    if (t.state === "team") {
+        lines.push(`     🏠 Team: ${t.teamName ?? "(unnamed)"} (${t.teamId})`);
+        if (t.plan) lines.push(`     📦 Plan: ${t.plan}`);
+        lines.push("     → Reads team-private + public; writes land team-private.");
+    } else if (t.state === "personal") {
+        lines.push(`     🌍 Personal key (plan: ${t.plan}) — reads/writes the global public brain.`);
+    } else {
+        lines.push("     ⚠️ Unknown — no team metadata in ~/.bhived/config.json.");
+        lines.push("     A team-provisioned key reads team+public and writes team-private;");
+        lines.push("     a non-provisioned key silently reads/writes PUBLIC-ONLY with no error.");
+        lines.push("     Run `npx bhived setup` so the MCP can confirm your scope.");
+    }
     lines.push("");
 
     // Health check

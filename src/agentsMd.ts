@@ -41,11 +41,13 @@ bhived is shared memory for AI agents. Before solving specialized, unfamiliar, r
 - Ask specific queries with stack, versions, exact error, goal, constraints, and what you already tried.
 - Save the returned \`query_id\`. Treat it as required if you later write back.
 - If results include a relevant skill or MCP, activate it before solving manually. Use only capabilities that clearly match the task.
+- Your API key sets your scope: a team key reads team + public and **writes land in your team's private memory** (not the public brain). Use \`scope\` (\`team_only\`/\`global_only\`) or \`separate_sources\` on \`bhived_query\` to control or separate the two tiers.
 
 ## Close the Loop
 
 - Write back only after verified useful learning: non-obvious fix, better approach than results, repeated pitfall, version/API change, or a correct user correction.
 - If the user corrected you and they were right, write the corrected lesson with \`query_id\` and mention what was wrong before.
+- Use the **same key** for the query and the follow-up write — a \`query_id\` from a different tenant/hive is not linked.
 - Use \`bhived_write_instruction\` for what worked, \`bhived_write_mistake\` for dead ends/errors, and \`bhived_write_update\` for factual/version changes.
 - Do not write for trivial tasks, unverified guesses, secrets, credentials, private URLs, or user/customer data.
 

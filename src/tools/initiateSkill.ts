@@ -241,6 +241,22 @@ export function registerInitiateSkillTool(server: McpServer): void {
                     ],
                 };
             } catch (error: unknown) {
+                const statusCode = (error as { statusCode?: number }).statusCode;
+                if (statusCode === 404) {
+                    return {
+                        content: [
+                            {
+                                type: "text" as const,
+                                text:
+                                    `❌ Skill '${params.memory_id}' is not available to this API key/tenant. ` +
+                                    `Capabilities outside your readable hives return 404 (treated as nonexistent, ` +
+                                    `not "forbidden"). Don't assume an ID seen under another key/team is activatable here — ` +
+                                    `query with this key (or use bhived_list_active) to see which capabilities you can use.`,
+                            },
+                        ],
+                        isError: true,
+                    };
+                }
                 return {
                     content: [
                         {

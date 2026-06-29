@@ -52,7 +52,7 @@ import { registerReviewMemoryPrompt } from "./prompts/reviewMemory.js";
 function createServer(): McpServer {
     const server = new McpServer({
         name: "bhived-mcp",
-        version: "1.1.10",
+        version: "1.2.0",
     });
 
     // ── Register tools — Core ────────────────────────────────────
@@ -78,7 +78,7 @@ function createServer(): McpServer {
         {
             title: "Bhived Status",
             description:
-                "Current Bhived system status — graph size, memory counts, health metrics, active capabilities.",
+                "Current Bhived status — your API key's tenancy/scope, health metrics (graph/redis connectivity), and total memory count. For active skills/MCPs see bhived://capabilities.",
             mimeType: "text/plain",
         },
         async (uri) => ({

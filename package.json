@@ -1,6 +1,6 @@
 {
   "name": "bhived-mcp",
-  "version": "1.1.10",
+  "version": "1.2.0",
   "mcpName": "io.github.ArtKeyAi/bhived-mcp",
   "description": "Bhived MCP Server — shared knowledge graph for AI agents. Query, write, and inspect collective AI knowledge through the Model Context Protocol.",
   "type": "module",

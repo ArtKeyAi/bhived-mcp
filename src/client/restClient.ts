@@ -10,6 +10,7 @@ import { config } from "../config.js";
 import type {
     QueryParams,
     QueryResult,
+    ReadResultV2,
     WriteParams,
     WriteResult,
     MemoryDetail,
@@ -36,6 +37,15 @@ export class BhivedRestClient {
 
     async query(params: QueryParams): Promise<QueryResult> {
         return this.post<QueryResult>("/v1/query", params);
+    }
+
+    /**
+     * POST /v2/query — same request body as /v1/query (including `scope`), but
+     * returns team-hive and public-hive results in SEPARATE sections.
+     * Honors the same `503 models_warming` retry-with-backoff as /v1/query.
+     */
+    async queryV2(params: QueryParams): Promise<ReadResultV2> {
+        return this.post<ReadResultV2>("/v2/query", params);
     }
 
     async writeMemory(params: WriteParams): Promise<WriteResult> {
@@ -166,31 +176,45 @@ export class BhivedRestClient {
         fn: (signal: AbortSignal) => Promise<T>,
         retries = 1
     ): Promise<T> {
-        for (let attempt = 0; attempt <= retries; attempt++) {
+        // Two independent retry budgets:
+        //  - transient (timeouts, network blips, generic 5xx): short backoff
+        //  - models_warming (503 during model warmup): more attempts, longer backoff
+        let transientAttempts = 0;
+        let warmingAttempts = 0;
+        const maxWarmingRetries = config.modelWarmupRetries;
+
+        for (;;) {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
             try {
-                const result = await fn(controller.signal);
-                return result;
+                return await fn(controller.signal);
             } catch (error: unknown) {
-                const isLastAttempt = attempt === retries;
-                const isRetryable = this.isRetryableError(error);
+                const warming = this.isModelsWarming(error);
+                const retryable = warming || this.isRetryableError(error);
+                const exhausted = warming
+                    ? warmingAttempts >= maxWarmingRetries
+                    : transientAttempts >= retries;
 
-                if (isLastAttempt || !isRetryable) {
+                if (!retryable || exhausted) {
                     throw this.normalizeError(error);
                 }
 
-                // Exponential backoff: 500ms, 1000ms, ...
-                const delay = 500 * Math.pow(2, attempt);
+                let delay: number;
+                if (warming) {
+                    // Models warming up — back off longer: 1s, 2s, 4s, 8s … capped at 10s.
+                    delay = Math.min(1000 * Math.pow(2, warmingAttempts), 10000);
+                    warmingAttempts++;
+                } else {
+                    // Generic transient — short backoff: 500ms, 1000ms, …
+                    delay = 500 * Math.pow(2, transientAttempts);
+                    transientAttempts++;
+                }
                 await new Promise((resolve) => setTimeout(resolve, delay));
             } finally {
                 clearTimeout(timeoutId);
             }
         }
-
-        // Unreachable but TypeScript needs it
-        throw new Error("Request failed after retries");
     }
 
     private isRetryableError(error: unknown): boolean {
@@ -198,6 +222,31 @@ export class BhivedRestClient {
         if (error instanceof TypeError && error.message.includes("fetch")) return true;
         const statusCode = (error as { statusCode?: number }).statusCode;
         return statusCode !== undefined && statusCode >= 500;
+    }
+
+    /**
+     * Detect the `503 {"error":"models_warming"}` signal the backend returns on
+     * /v1/query and /v2/query while embedding/reranker models warm up. This is
+     * transient, not fatal — callers should retry with backoff rather than surface
+     * it as an error.
+     */
+    private isModelsWarming(error: unknown): boolean {
+        const statusCode = (error as { statusCode?: number }).statusCode;
+        if (statusCode !== 503) return false;
+
+        const body = (error as { body?: string }).body ?? "";
+        if (body.includes("models_warming")) return true;
+        try {
+            const parsed = JSON.parse(body) as Record<string, unknown>;
+            const detail = parsed.detail as Record<string, unknown> | string | undefined;
+            return (
+                parsed.error === "models_warming" ||
+                detail === "models_warming" ||
+                (typeof detail === "object" && detail?.error === "models_warming")
+            );
+        } catch {
+            return false;
+        }
     }
 
     private normalizeError(error: unknown): Error {

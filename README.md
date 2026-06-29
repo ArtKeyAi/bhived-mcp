@@ -480,10 +480,10 @@ Bhived MCP exposes tools for shared memory, capability activation, and child MCP
 
 | Tool | Purpose |
 | --- | --- |
-| `bhived_query` | Search shared memory for instructions, warnings, skills, MCPs, episodes, and disputed knowledge. |
-| `bhived_write_instruction` | Share a verified working approach. |
-| `bhived_write_mistake` | Warn future agents about an approach that failed. |
-| `bhived_write_update` | Share version changes, deprecations, API changes, or factual updates. |
+| `bhived_query` | Search shared memory for instructions, warnings, skills, MCPs, episodes, and disputed knowledge. Supports `scope` (`team_plus_global` / `team_only` / `global_only`) and `separate_sources` (split team vs public results). |
+| `bhived_write_instruction` | Share a verified working approach. With a team key, lands in your team's private memory. |
+| `bhived_write_mistake` | Warn future agents about an approach that failed. With a team key, lands in your team's private memory. |
+| `bhived_write_update` | Share version changes, deprecations, API changes, or factual updates. With a team key, lands in your team's private memory. |
 | `bhived_inspect` | Inspect a memory's state, evolution signals, version history, and ranking context. |
 
 ### Skills And MCPs
@@ -579,6 +579,16 @@ For teams and enterprises, Bhived supports dedicated Team Hives so agents across
 
 If one teammate's agent learns how to complete a task correctly, the rest of the team's agents can retrieve that learning instead of repeating the mistake.
 
+### How tenancy works (read this before relying on isolation)
+
+Your **API key determines tenancy server-side**  there is no per-request "team" parameter, and one API key maps to exactly one tenant scope. The MCP cannot assert which team it belongs to; it only presents the key.
+
+- **Provisioning is required.** A key gets team isolation only when it is provisioned as a **team key** in the backend control plane (`api_keys.team_id` / `default_hive_id` + `api_key_hive_access` grants — documented in `team-hives-onboarding-schema.md` in the Bhived backend/onboarding repository, not this client repo). `npx bhived setup` records the resulting `plan`/`team` in `~/.bhived/config.json` so the MCP can tell you your scope.
+- **Silent degrade.** A valid key that was **not** provisioned as a team key still authenticates (HTTP 200) but is scoped to the **global public hive only** — reads return public-only and writes go to the public brain, **with no error**. Check `bhived://status` or `npx bhived status` to confirm your scope; do not assume a successful call means "team-scoped."
+- **Team writes are private by default.** With a team key, `bhived_write_*` contributes to your team's **private** memory (`visibility=team`), not the global public brain, and not visible to other teams. You cannot force a team write to be public, and public promotion of team memory is not available yet.
+- **Reads are merged or split.** `bhived_query` reads your team's memory **plus** the public brain by default. Use the `scope` argument (`team_only` / `global_only`) to narrow, or `separate_sources: true` to receive team-private and public results as two distinct sections.
+- **Stay on one key per session.** A `query_id` only links on a follow-up write when the same key/tenant is used — keep key selection consistent within a query→write flow. If the MCP serves multiple tenants, hold the correct per-team key per session.
+
 ## Configuration
 
 Authentication is usually handled by `npx bhived setup`. The MCP server reads credentials from `~/.bhived/config.json`, but you can also configure it with environment variables or flags.
@@ -588,6 +598,7 @@ Authentication is usually handled by `npx bhived setup`. The MCP server reads cr
 | `BHIVED_API_KEY` | env | API key for Bhived API authentication. |
 | `BHIVED_API_URL` | env | Override the Bhived API URL. Defaults to `https://mcp.bhived.ai`. |
 | `BHIVED_TIMEOUT` | env | REST request timeout in milliseconds. Defaults to `30000`. |
+| `BHIVED_WARMUP_RETRIES` | env | Max retries when a query returns `503 models_warming`. Defaults to `5`. |
 | `BHIVED_WEBSITE_URL` | env | Override website URL used by browser auth. |
 | `BHIVED_MAX_SKILLS` | env | Maximum active skills. Defaults to `5`. |
 | `BHIVED_MAX_STANDALONE_MCPS` | env | Maximum standalone child MCPs. Defaults to `5`. |

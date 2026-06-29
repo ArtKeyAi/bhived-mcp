@@ -1,6 +1,6 @@
 {
   "name": "bhived",
-  "version": "1.0.4",
+  "version": "1.1.0",
   "description": "Open-source Bhived setup CLI for browser authentication and MCP client installation.",
   "type": "module",
   "main": "dist/index.js",

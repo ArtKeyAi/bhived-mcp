@@ -200,6 +200,23 @@ export function registerInitiateMcpTool(server: McpServer): void {
                     ],
                 };
             } catch (error: unknown) {
+                const statusCode = (error as { statusCode?: number }).statusCode;
+                if (statusCode === 404) {
+                    return {
+                        content: [
+                            {
+                                type: "text" as const,
+                                text:
+                                    `❌ MCP '${params.memory_id}' is not available to this API key/tenant. ` +
+                                    `Capabilities outside your readable hives return 404 (treated as nonexistent, ` +
+                                    `not "forbidden"). Don't assume an ID seen under another key/team is activatable here — ` +
+                                    `query with this key (or use bhived_list_active) to see which capabilities you can use.`,
+                            },
+                        ],
+                        isError: true,
+                    };
+                }
+
                 const errorMsg = error instanceof Error ? error.message : String(error);
 
                 // Include debug info about what we tried to spawn

@@ -1,7 +1,8 @@
 /**
  * Query Result Formatter
  *
- * Formats /v1/query results as clean Markdown optimized for LLM parsing.
+ * Formats /v1/query and /v2/query results as clean Markdown optimized for LLM
+ * parsing.
  *
  * Design principles:
  * - Markdown for universal LLM readability
@@ -9,12 +10,26 @@
  * - Clear key:value pairs for reliable extraction
  * - Token-efficient: no box-drawing chars, no emoji spam
  *
- * Skills and MCPs are separated from regular recommendations into
- * dedicated "Recommended Skills" / "Recommended MCPs" sections that
- * display only the description, resources, and activation ID.
+ * Skills and MCPs are separated from regular recommendations into dedicated
+ * "Recommended Skills" / "Recommended MCPs" sections that display only the
+ * description, resources, and activation ID.
+ *
+ * /v2/query additionally splits results into two tiers — "Your Team's Memory"
+ * (team-private) and "Shared Public Brain" (public) — so agents can tell
+ * proprietary team knowledge from public knowledge.
  */
 
-import type { QueryResult, QueryMemory, QueryWarning, DisputedPair } from "../client/types.js";
+import type {
+    QueryResult,
+    ReadResultV2,
+    ReadScope,
+    QueryMemory,
+    QueryWarning,
+    DisputedPair,
+    QueryEpisode,
+    FailedApproach,
+} from "../client/types.js";
+import { tenancyBanner, getTenancy } from "../tenancy.js";
 
 // ── Max items for capability sections ────────────────────────────
 const MAX_SKILLS_SHOWN = 10;
@@ -33,17 +48,137 @@ function trimTextForReadability(text: string, maxWords: number, memId: string | 
     return `${truncated}...${notice}`;
 }
 
-export function formatQueryResult(result: QueryResult): string {
+// ── v1 (merged) ──────────────────────────────────────────────────
+
+export function formatQueryResult(result: QueryResult, scope?: ReadScope): string {
     const sections: string[] = [];
 
     const recs = result.recommendations ?? [];
 
-    // ── Partition: separate skill/mcp memories from regular memories ──
+    // ── Header + tenancy banner ──
+    sections.push(`# bhived Results (${recs.length} found)\n`);
+    sections.push(`${tenancyBanner("read")}\n`);
+
+    // ── Recommendations / Skills / MCPs ──
+    sections.push(...renderRecommendationSet(recs, scope));
+
+    // ── Warnings / Disputed / Episodes / Failed approaches ──
+    sections.push(...renderWarnings(result.warnings ?? []));
+    sections.push(...renderDisputed(result.disputed ?? result.disputed_pairs ?? []));
+    sections.push(...renderEpisodes(result.episodes ?? []));
+    sections.push(...renderFailedApproaches(result.failed_approaches ?? []));
+
+    // ── Query ID (critical for feedback loop) ──
+    sections.push(...renderQueryFooter(result.query_id));
+
+    return sections.join("\n");
+}
+
+// ── v2 (team vs public separated) ────────────────────────────────
+
+export function formatQueryResultV2(result: ReadResultV2): string {
+    const sections: string[] = [];
+
+    const teamRecs = result.team_recommendations ?? [];
+    const publicRecs = result.public_recommendations ?? [];
+
+    sections.push("# bhived Results — Team + Public (separated)\n");
+    sections.push(`${tenancyBanner("read")}\n`);
+
+    // The "not provisioned as a team key" caveat only makes sense when tenancy is
+    // unverified; a confirmed team key would contradict its own banner above.
+    const teamEmptyMsg =
+        getTenancy().state === "team"
+            ? "*No team-private memories matched this query.* Your team hive has nothing on this topic yet — " +
+              "this is not a global fallback (public results are shown separately below)."
+            : "*No team-private memories matched this query.* If you expected team results, either your team hive " +
+              "has nothing on this topic yet, or your key is not provisioned as a team key (it would silently read " +
+              "public-only). This is not a global fallback — team and public are shown separately below.";
+
+    // ── 🏠 Team tier ──
+    sections.push(`## 🏠 Your Team's Memory (${teamRecs.length} found)\n`);
+    sections.push(
+        ...renderTier(
+            teamRecs,
+            result.team_warnings ?? [],
+            result.team_disputed ?? [],
+            result.team_episodes ?? [],
+            result.team_failed_approaches ?? [],
+            teamEmptyMsg
+        )
+    );
+
+    // ── 🌍 Public tier ──
+    sections.push(`## 🌍 Shared Public Brain (${publicRecs.length} found)\n`);
+    sections.push(
+        ...renderTier(
+            publicRecs,
+            result.public_warnings ?? [],
+            result.public_disputed ?? [],
+            result.public_episodes ?? [],
+            result.public_failed_approaches ?? [],
+            "*No public memories matched this query.*"
+        )
+    );
+
+    sections.push(...renderQueryFooter(result.query_id));
+
+    return sections.join("\n");
+}
+
+/**
+ * Render one tier (team or public): recommendations + every secondary section,
+ * each independent. Warnings/disputed/episodes/failed-approaches are ALWAYS
+ * rendered when present — they must never be gated behind the recommendation
+ * count, or safety-relevant signals (warnings, contradictions) would be lost
+ * when a tier has those but no positively-ranked recommendations.
+ */
+function renderTier(
+    recs: QueryMemory[],
+    warnings: QueryWarning[],
+    disputed: DisputedPair[],
+    episodes: QueryEpisode[],
+    failed: FailedApproach[],
+    emptyMessage: string
+): string[] {
+    const out: string[] = [];
+
+    const fullyEmpty =
+        recs.length === 0 &&
+        warnings.length === 0 &&
+        disputed.length === 0 &&
+        episodes.length === 0 &&
+        failed.length === 0;
+
+    if (fullyEmpty) {
+        out.push(`${emptyMessage}\n`);
+        return out;
+    }
+
+    // Only render the recommendations block when there are recommendations — an
+    // empty-rec note here would be noise alongside the warnings/disputed below.
+    if (recs.length > 0) {
+        out.push(...renderRecommendationSet(recs));
+    }
+    out.push(...renderWarnings(warnings));
+    out.push(...renderDisputed(disputed));
+    out.push(...renderEpisodes(episodes));
+    out.push(...renderFailedApproaches(failed));
+
+    return out;
+}
+
+// ── Shared section renderers ─────────────────────────────────────
+
+/** Partition recommendations into regular / skill / mcp and render each block. */
+function renderRecommendationSet(recs: QueryMemory[], scope?: ReadScope): string[] {
+    const sections: string[] = [];
+
     const regularMemories: QueryMemory[] = [];
     const skillMemories: QueryMemory[] = [];
     const mcpMemories: QueryMemory[] = [];
 
-    for (const mem of recs) {
+    for (const mem of recs.filter(Boolean)) {
         if (mem.has_skill && mem.skill_meta) {
             skillMemories.push(mem);
         } else if (mem.has_mcp && mem.mcp_meta) {
@@ -53,69 +188,88 @@ export function formatQueryResult(result: QueryResult): string {
         }
     }
 
-    // ── Header ──
-    sections.push(`# bhived Results (${recs.length} found)\n`);
-
-    // ── Regular Recommendations (non-skill, non-mcp) ──
     if (regularMemories.length === 0 && skillMemories.length === 0 && mcpMemories.length === 0) {
-        sections.push("No matching memories found. Try broadening your query.\n");
-    } else if (regularMemories.length > 0) {
+        // Under team_only there is NO fallback to public — say so honestly rather
+        // than implying a wider search would help (plan §2).
+        sections.push(
+            scope === "team_only"
+                ? "No team-private memories matched. This did NOT fall back to public — your team hive has nothing on this topic yet.\n"
+                : "No matching memories found. Try broadening your query.\n"
+        );
+        return sections;
+    }
+
+    if (regularMemories.length > 0) {
         sections.push("## Recommendations\n");
         regularMemories.forEach((mem, i) => {
             sections.push(formatMemory(mem, i + 1));
         });
     }
 
-    // ── Recommended Skills section ──
     if (skillMemories.length > 0) {
         sections.push(formatRecommendedSkills(skillMemories));
     }
 
-    // ── Recommended MCPs section ──
     if (mcpMemories.length > 0) {
         sections.push(formatRecommendedMcps(mcpMemories));
     }
 
-    // ── Warnings ──
-    const warnings = result.warnings ?? [];
-    if (warnings.length > 0) {
-        sections.push("## ⚠️ Warnings\n");
-        warnings.forEach((w) => {
-            sections.push(formatWarning(w));
-        });
-    }
+    return sections;
+}
 
-    // ── Disputed Pairs ──
-    const disputed = result.disputed_pairs ?? [];
-    if (disputed.length > 0) {
-        sections.push("## Disputed Pairs\n");
-        disputed.forEach((pair) => {
-            sections.push(formatDisputed(pair));
-        });
-    }
+function renderWarnings(warnings: QueryWarning[]): string[] {
+    if (warnings.length === 0) return [];
+    const sections = ["## ⚠️ Warnings\n"];
+    warnings.forEach((w) => sections.push(formatWarning(w)));
+    return sections;
+}
 
-    // ── Episodes ──
-    const episodes = result.episodes ?? [];
-    if (episodes.length > 0) {
-        sections.push("## Episodes\n");
-        episodes.forEach((ep) => {
-            const memIds = ep.memories.map(m => getMemoryId(m)).join(" → ");
-            sections.push(`- **${ep.topic}**: ${memIds}`);
-        });
-        sections.push("");
-    }
+function renderDisputed(disputed: DisputedPair[]): string[] {
+    if (disputed.length === 0) return [];
+    const sections = ["## Disputed Pairs\n"];
+    disputed.forEach((pair) => sections.push(formatDisputed(pair)));
+    return sections;
+}
 
-    // ── Query ID (critical for feedback loop) ──
-    sections.push("---");
-    sections.push(`**query_id**: \`${result.query_id}\``);
-    sections.push("Next step: use relevant recommendations or activate matching skills/MCPs, then verify your result. If you learn something reusable or the user correction was right, write back with this query_id.");
+function renderEpisodes(episodes: QueryEpisode[]): string[] {
+    if (episodes.length === 0) return [];
+    const sections = ["## Episodes\n"];
+    episodes.forEach((ep) => {
+        const memIds = (ep.memories ?? []).map((m) => getMemoryId(m)).join(" → ");
+        sections.push(`- **${ep.topic}**: ${memIds}`);
+    });
+    sections.push("");
+    return sections;
+}
 
-    return sections.join("\n");
+function renderFailedApproaches(failed: FailedApproach[]): string[] {
+    if (failed.length === 0) return [];
+    const sections = ["## 🚫 Failed Approaches (already tried — don't repeat)\n"];
+    failed.forEach((fa) => {
+        const title = fa.title ? `**${fa.title}**` : "**(untitled)**";
+        const body = fa.reason ?? fa.text ?? "";
+        const trimmed = body ? trimTextForReadability(body, MAX_WORDS_SHOWN, getMemoryIdOpt(fa)) : "";
+        sections.push(`- ${title}${trimmed ? ` — ${trimmed}` : ""}`);
+    });
+    sections.push("");
+    return sections;
+}
+
+function renderQueryFooter(queryId: string): string[] {
+    return [
+        "---",
+        `**query_id**: \`${queryId}\``,
+        "Next step: use relevant recommendations or activate matching skills/MCPs, then verify your result. If you learn something reusable or the user correction was right, write back with this query_id (using the SAME key).",
+    ];
 }
 
 /** Extract memory ID, handling both `id` and `memory_id` field names */
 function getMemoryId(mem: QueryMemory): string {
-    return mem.id ?? (mem as unknown as Record<string, unknown>)["memory_id"] as string ?? "unknown";
+    return mem.id ?? mem.memory_id ?? "unknown";
+}
+
+function getMemoryIdOpt(fa: FailedApproach): string | null {
+    return fa.id ?? fa.memory_id ?? null;
 }
 
 /**
@@ -194,7 +348,8 @@ function formatRecommendedSkills(skills: QueryMemory[]): string {
 
         // Usage stats (if available)
         const stats: string[] = [];
-        if (sm.usage_count !== undefined) stats.push(`used by ${sm.usage_count} agents`);
+        const usage = sm.usage_count ?? sm.activation_count;
+        if (usage !== undefined) stats.push(`used by ${usage} agents`);
         if (sm.success_rate !== undefined) stats.push(`success: ${Math.round(sm.success_rate * 100)}%`);
         if (stats.length > 0) {
             lines.push(`📊 ${stats.join(" · ")}\n`);
@@ -243,7 +398,8 @@ function formatRecommendedMcps(mcps: QueryMemory[]): string {
 
         // Usage stats (if available)
         const stats: string[] = [];
-        if (mm.usage_count !== undefined) stats.push(`used by ${mm.usage_count} agents`);
+        const usage = mm.usage_count ?? mm.activation_count;
+        if (usage !== undefined) stats.push(`used by ${usage} agents`);
         if (mm.success_rate !== undefined) stats.push(`success: ${Math.round(mm.success_rate * 100)}%`);
         if (stats.length > 0) {
             lines.push(`📊 ${stats.join(" · ")}\n`);
@@ -277,9 +433,21 @@ function formatWarning(w: QueryWarning): string {
 }
 
 function formatDisputed(pair: DisputedPair): string {
+    // Tolerate both the flat live shape (memory_a_id/_text) and the legacy nested
+    // shape ({memory_a, memory_b} objects). Never assume a nested object exists.
+    const disputeType = pair.dispute_type ?? "contradiction";
+    const aId = pair.memory_a_id ?? (pair.memory_a ? getMemoryId(pair.memory_a) : "unknown");
+    const bId = pair.memory_b_id ?? (pair.memory_b ? getMemoryId(pair.memory_b) : "unknown");
+    const aText = pair.memory_a_text ?? pair.memory_a?.title ?? "";
+    const bText = pair.memory_b_text ?? pair.memory_b?.title ?? "";
+    const conf =
+        typeof pair.confidence === "number" ? ` (confidence: ${pair.confidence.toFixed(2)})` : "";
+
+    const snippet = (s: string) => trimTextForReadability(s, 40);
+
     const lines: string[] = [];
-    lines.push(`- **${pair.dispute_type}**`);
-    lines.push(`  - A: [${pair.memory_a.type}] "${pair.memory_a.title}" (\`${getMemoryId(pair.memory_a)}\`)`);
-    lines.push(`  - B: [${pair.memory_b.type}] "${pair.memory_b.title}" (\`${getMemoryId(pair.memory_b)}\`)\n`);
+    lines.push(`- **${disputeType}**${conf}`);
+    lines.push(`  - A: "${snippet(aText)}" (\`${aId}\`)`);
+    lines.push(`  - B: "${snippet(bText)}" (\`${bId}\`)\n`);
     return lines.join("\n");
 }

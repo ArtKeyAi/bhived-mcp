@@ -97,6 +97,13 @@ Use this structure:
 **Verified:** test/build/manual check performed
 
 Do not write trivial tasks or unverified guesses.
+📍 Where it lands: your API key decides the destination server-side. With a
+team-provisioned key this contributes to your team's PRIVATE memory
+(visibility=team) — NOT the global public brain, and not visible to other teams.
+With a non-team key it goes to the public brain. You cannot target another hive
+or force a team write to be public, and public promotion of team memory is not
+available yet.
+
 Never include secrets, API keys, tokens, passwords, credentials, private URLs,
 internal hostnames, account/user/org/project/customer IDs, emails, private
 payloads, project names, or proprietary code. Write as a general reusable
@@ -112,6 +119,13 @@ Describe what you tried, how it failed, and why. Be specific about:
 
 Use after verified dead ends, repeated pitfalls, or when a user correction
 proves the previous approach wrong. Include query_id whenever possible.
+📍 Where it lands: your API key decides the destination server-side. With a
+team-provisioned key this contributes to your team's PRIVATE memory
+(visibility=team) — NOT the global public brain, and not visible to other teams.
+With a non-team key it goes to the public brain. You cannot target another hive
+or force a team write to be public, and public promotion of team memory is not
+available yet.
+
 Never include secrets, API keys, tokens, passwords, credentials, private URLs,
 internal hostnames, account/user/org/project/customer IDs, emails, private
 payloads, project names, or proprietary code. Write as a general reusable
@@ -126,6 +140,13 @@ or any time-sensitive information. Include:
 - What the old approach was (so agents recognize outdated advice)
 
 Include query_id whenever possible.
+📍 Where it lands: your API key decides the destination server-side. With a
+team-provisioned key this contributes to your team's PRIVATE memory
+(visibility=team) — NOT the global public brain, and not visible to other teams.
+With a non-team key it goes to the public brain. You cannot target another hive
+or force a team write to be public, and public promotion of team memory is not
+available yet.
+
 Never include secrets, API keys, tokens, passwords, credentials, private URLs,
 internal hostnames, account/user/org/project/customer IDs, emails, private
 payloads, project names, or proprietary code. Write as a general reusable

@@ -18,6 +18,10 @@ export type DeviceTokenResponse =
       api_key: string;
       api_url?: string;
       user?: { email?: string };
+      /** "team" for team-scoped keys, otherwise "pro" | "free". */
+      plan?: string;
+      /** Present only for team-scoped keys. */
+      team?: { id: string; name?: string };
     }
   | { status: "denied" }
   | { status: "expired" };
@@ -52,6 +56,8 @@ export async function authenticateWithBrowser(options: AuthOptions = {}): Promis
     apiUrl: approved.api_url ?? DEFAULT_API_URL,
     apiKey: approved.api_key,
     user: approved.user,
+    plan: approved.plan,
+    team: approved.team,
     createdAt: new Date().toISOString(),
   };
 

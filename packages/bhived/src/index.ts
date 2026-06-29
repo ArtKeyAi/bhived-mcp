@@ -59,6 +59,17 @@ async function runAuth(): Promise<void> {
   console.log(`Authenticated${config.user?.email ? ` as ${config.user.email}` : ""}.`);
   console.log(`Saved Bhived credentials to ${getConfigPath()}.`);
   console.log(`API key: ${maskApiKey(config.apiKey)}`);
+  printScope(config.plan, config.team);
+}
+
+function printScope(plan?: string, team?: { id: string; name?: string }): void {
+  if (team?.id) {
+    console.log(`Scope: team "${team.name ?? team.id}" — reads team+public, writes team-private.`);
+  } else if (plan) {
+    console.log(`Scope: personal (plan: ${plan}) — reads/writes the global public brain.`);
+  } else {
+    console.log("Scope: personal (public brain). For team isolation, your key must be provisioned as a team key.");
+  }
 }
 
 async function runSetup(): Promise<void> {
@@ -104,6 +115,11 @@ async function runStatus(): Promise<void> {
   if (config.user?.email) console.log(`User: ${config.user.email}`);
   console.log(`API URL: ${config.apiUrl}`);
   console.log(`API key: ${maskApiKey(config.apiKey)}`);
+  if (config.team?.id) {
+    console.log(`Team: ${config.team.name ?? "(unnamed)"} (${config.team.id})`);
+  }
+  if (config.plan) console.log(`Plan: ${config.plan}`);
+  printScope(config.plan, config.team);
   console.log(`Config: ${getConfigPath()}`);
 }
 

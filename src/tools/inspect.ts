@@ -100,7 +100,11 @@ export function registerInspectTool(server: McpServer): void {
                         content: [
                             {
                                 type: "text" as const,
-                                text: `Memory not found: ${params.memory_id}. Check the ID and try again.`,
+                                text:
+                                    `Memory not available: ${params.memory_id}. Either it does not exist, or it lives ` +
+                                    `in a hive your API key cannot read (memories/capabilities outside your readable ` +
+                                    `hives return 404, not 403 — no existence disclosure). A memory_id seen under a ` +
+                                    `different team/key is not inspectable here. Check the ID and your key's scope.`,
                             },
                         ],
                         isError: true,

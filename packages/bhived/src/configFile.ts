@@ -9,6 +9,13 @@ export interface StoredBhivedConfig {
   user?: {
     email?: string;
   };
+  /** Plan recorded at sign-in: "team", "pro", or "free". */
+  plan?: string;
+  /** Present only for team-provisioned keys; lets the MCP confirm team scope. */
+  team?: {
+    id: string;
+    name?: string;
+  };
   createdAt?: string;
 }
 
@@ -27,6 +34,8 @@ export async function readStoredConfig(): Promise<StoredBhivedConfig | null> {
       apiUrl: parsed.apiUrl,
       apiKey: parsed.apiKey,
       user: parsed.user,
+      plan: parsed.plan,
+      team: parsed.team,
       createdAt: parsed.createdAt,
     };
   } catch {

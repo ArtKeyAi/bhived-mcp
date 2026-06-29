@@ -9,11 +9,13 @@
  */
 
 import type { WriteResult } from "../client/types.js";
+import { tenancyBanner } from "../tenancy.js";
 
 export function formatWriteResult(result: WriteResult, memoryType: string): string {
     const lines: string[] = [];
 
     lines.push(`# ✅ Memory ${result.action_performed}\n`);
+    lines.push(`${tenancyBanner("write")}\n`);
     lines.push(`- **type**: ${memoryType}`);
     lines.push(`- **memory_id**: \`${result.memory_id}\``);
     lines.push(`- **action**: ${result.action_performed}`);

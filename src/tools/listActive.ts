@@ -27,7 +27,11 @@ Returns a breakdown of:
 - Active skills with their scripts, references, assets, and bundled MCPs
 - Standalone MCP servers and their discovered tools
 - All available MCP tools across child MCPs
-- All registered resources from active skills`;
+- All registered resources from active skills
+
+This inventory reflects only capabilities activated with the current API key
+(capabilities are scoped to your readable hives — public + your team). Don't carry
+a capability list across keys/tenants.`;
 
 export function registerListActiveTool(server: McpServer): void {
     server.registerTool(

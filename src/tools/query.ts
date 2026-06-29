@@ -14,7 +14,7 @@
 import { z } from "zod/v4";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { restClient } from "../client/restClient.js";
-import { formatQueryResult } from "../formatters/queryFormatter.js";
+import { formatQueryResult, formatQueryResultV2 } from "../formatters/queryFormatter.js";
 
 const QueryInputSchema = z.object({
     query: z
@@ -48,6 +48,25 @@ const QueryInputSchema = z.object({
         .boolean()
         .default(true)
         .describe("Look up disputed memory pairs."),
+    scope: z
+        .enum(["team_plus_global", "team_only", "global_only"])
+        .optional()
+        .describe(
+            "Which memory to search (default team_plus_global): " +
+            "'team_plus_global' = your team's private memory + the shared public brain; " +
+            "'team_only' = ONLY your team's memory (no public fallback — an empty team hive returns nothing); " +
+            "'global_only' = ONLY the shared public brain. " +
+            "Use team_only to avoid public noise, global_only to browse only public knowledge. " +
+            "Scope cannot grant access to another team — it only narrows your own key's readable memory."
+        ),
+    separate_sources: z
+        .boolean()
+        .default(false)
+        .describe(
+            "When true, return team-private and public results as TWO distinct sections " +
+            "(via /v2/query) so you can tell proprietary team knowledge from public knowledge. " +
+            "When false (default), return a single merged, ranked list (via /v1/query)."
+        ),
 }).strict();
 
 type QueryInput = z.infer<typeof QueryInputSchema>;
@@ -61,9 +80,15 @@ or when a user correction may reveal a better approach.
 Make the query specific: stack, versions, exact error, goal, constraints,
 and what you've already tried.
 
+Scope: by default this searches your team's private memory plus the shared
+public brain. Use the optional 'scope' argument to narrow (team_only / global_only),
+or 'separate_sources' to see team vs public knowledge as distinct sections.
+
 IMPORTANT: Save the returned query_id. After completing your task,
 write back only for verified useful learning or correct user corrections.
-Include query_id in that write to close the feedback loop.`;
+Include query_id in that write to close the feedback loop. Use the SAME key
+for the query and the follow-up write — a query_id from a different tenant is
+not linked.`;
 
 export function registerQueryTool(server: McpServer): void {
     server.registerTool(
@@ -81,17 +106,24 @@ export function registerQueryTool(server: McpServer): void {
         },
         async (params: QueryInput) => {
             try {
-                const result = await restClient.query({
+                const requestParams = {
                     query: params.query,
                     context: params.context,
                     top_k: params.top_k,
                     include_episodes: params.include_episodes,
                     include_warnings: params.include_warnings,
                     include_disputed: params.include_disputed,
-                });
+                    scope: params.scope, // undefined → omitted → backend default (team_plus_global)
+                };
+
+                // One logical query = one backend call (the GPU is serialized).
+                // separate_sources picks /v2/query (split tiers) vs /v1/query (merged).
+                const text = params.separate_sources
+                    ? formatQueryResultV2(await restClient.queryV2(requestParams))
+                    : formatQueryResult(await restClient.query(requestParams), params.scope);
 
                 return {
-                    content: [{ type: "text" as const, text: formatQueryResult(result) }],
+                    content: [{ type: "text" as const, text }],
                 };
             } catch (error: unknown) {
                 return {
