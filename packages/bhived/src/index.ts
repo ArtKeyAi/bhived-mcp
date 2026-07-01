@@ -6,10 +6,12 @@ import { fileURLToPath } from "node:url";
 import { authenticateWithBrowser } from "./auth.js";
 import {
   AGENT_IDS,
+  detectPlatform,
   getAgentConfig,
   parseFlags,
   parsePlatform,
   type AgentId,
+  type TargetPlatform,
 } from "./agentConfigs.js";
 import {
   deleteStoredConfig,
@@ -18,10 +20,20 @@ import {
   readStoredConfig,
 } from "./configFile.js";
 import { detectAgentInstall, installAgentConfig } from "./installAgentConfigs.js";
+import {
+  installGlobalInstruction,
+  refreshOutdatedInstructions,
+} from "./installGlobalInstructions.js";
 
 const command = process.argv[2] ?? "help";
 
 try {
+  // Keep global bhived instruction blocks current on every command (best-effort,
+  // silent unless something was actually outdated). `setup` handles this itself.
+  if (!["help", "--help", "-h", "setup"].includes(command)) {
+    await refreshInstructionsQuietly();
+  }
+
   switch (command) {
     case "auth":
       await runAuth();
@@ -85,6 +97,8 @@ async function runSetup(): Promise<void> {
   const forceAll = flags.has("force-all");
   const detectInstalledOnly = !forceAll && (flagSet.has("all") || explicitAgents.length === 0);
   const selectedAgents = forceAll || detectInstalledOnly ? [...AGENT_IDS] : explicitAgents;
+  const writeInstructions = !flags.has("no-instructions");
+  const writeMcp = !flags.has("instructions-only");
   const existing = await readStoredConfig();
 
   console.log("Bhived setup");
@@ -99,7 +113,7 @@ async function runSetup(): Promise<void> {
   }
 
   console.log("");
-  await installAgentConfigs(selectedAgents, platform, detectInstalledOnly);
+  await installAgentConfigs(selectedAgents, platform, detectInstalledOnly, { writeMcp, writeInstructions });
 }
 
 async function runStatus(): Promise<void> {
@@ -162,29 +176,58 @@ Agent flags:
   --force-all        Install all supported configs without detection
 
 Options:
-  --platform         Override auto-detected OS for docs/testing: windows|macos|linux
+  --platform          Override auto-detected OS for docs/testing: windows|macos|linux
+  --no-instructions   Only install MCP config; skip the global instructions file
+  --instructions-only Only write the global instructions file; skip MCP config
+
+Global instructions:
+  On setup, bhived writes its Memory Protocol block into each detected agent's
+  user-global instructions file (e.g. ~/.claude/CLAUDE.md, ~/.codex/AGENTS.md,
+  ~/.gemini/GEMINI.md) so it applies to all sessions — never the opened project.
+  Every other bhived command refreshes that block if a newer version ships.
+  Claude Desktop and Cursor keep global instructions in-app (no file) and are skipped.
 
 Environment:
   BHIVED_WEBSITE_URL  Override website URL for auth, e.g. http://localhost:3000
 `);
 }
 
-async function installAgentConfigs(agentIds: AgentId[], platform: "windows" | "macos" | "linux", detectInstalledOnly: boolean): Promise<void> {
+interface InstallOptions {
+  writeMcp: boolean;
+  writeInstructions: boolean;
+}
+
+async function installAgentConfigs(
+  agentIds: AgentId[],
+  platform: TargetPlatform,
+  detectInstalledOnly: boolean,
+  options: InstallOptions
+): Promise<void> {
   const mode = detectInstalledOnly ? "detect installed agents" : agentIds.length === AGENT_IDS.length ? "force all supported agents" : "explicit agent selection";
 
-  console.log("MCP config install");
+  const scope = options.writeMcp && options.writeInstructions
+    ? "MCP config + global instructions"
+    : options.writeMcp
+      ? "MCP config"
+      : "global instructions";
+  console.log(`Install (${scope})`);
   console.log(`Mode: ${mode}`);
   if (detectInstalledOnly) {
-    console.log("Detection: checking known app/config paths before writing configs");
+    console.log("Detection: checking known app/config paths before writing");
   }
-  console.log("Safety: preserving existing MCP servers; only `bhived` is added or replaced");
-  console.log("Secrets: no API key is written into agent configs; agents read `~/.bhived/config.json`");
+  if (options.writeMcp) {
+    console.log("Safety: preserving existing MCP servers; only `bhived` is added or replaced");
+    console.log("Secrets: no API key is written into agent configs; agents read `~/.bhived/config.json`");
+  }
+  if (options.writeInstructions) {
+    console.log("Instructions: bhived protocol block written to each agent's user-global instructions file");
+  }
   console.log("");
 
-  let installedCount = 0;
-  let skippedCount = 0;
+  let mcpInstalled = 0;
+  let instructionsChanged = 0;
   let detectedCount = 0;
-  const installedLabels: string[] = [];
+  const configuredLabels = new Set<string>();
   const skippedLabels: string[] = [];
 
   for (const agentId of agentIds) {
@@ -192,7 +235,6 @@ async function installAgentConfigs(agentIds: AgentId[], platform: "windows" | "m
     if (detectInstalledOnly) {
       const detection = await detectAgentInstall(agentId, platform);
       if (!detection.installed) {
-        skippedCount++;
         skippedLabels.push(config.label);
         console.log(`[skip] ${config.label}: not detected`);
         console.log(`       Checked: ${detection.reason}`);
@@ -202,38 +244,97 @@ async function installAgentConfigs(agentIds: AgentId[], platform: "windows" | "m
       console.log(`[detect] ${config.label}: ${detection.reason}`);
     }
 
-    const result = await installAgentConfig(agentId, platform);
-    if (result.status === "installed") {
-      installedCount++;
-      installedLabels.push(config.label);
-      console.log(`[ok] ${config.label}: ${result.path ?? result.message}`);
-    } else {
-      skippedCount++;
-      skippedLabels.push(config.label);
-      console.log(`[skip] ${config.label}: ${result.message}`);
+    if (options.writeMcp) {
+      const result = await installAgentConfig(agentId, platform);
+      if (result.status === "installed") {
+        mcpInstalled++;
+        configuredLabels.add(config.label);
+        console.log(`[ok] ${config.label}: MCP config -> ${result.path ?? result.message}`);
+      } else {
+        console.log(`[skip] ${config.label}: MCP config — ${result.message}`);
+      }
+    }
+
+    if (options.writeInstructions) {
+      const instr = await installGlobalInstruction(agentId, platform, { create: true });
+      switch (instr.status) {
+        case "written":
+          instructionsChanged++;
+          configuredLabels.add(config.label);
+          console.log(`[ok] ${config.label}: instructions -> ${instr.path ?? instr.message}`);
+          break;
+        case "updated":
+          instructionsChanged++;
+          configuredLabels.add(config.label);
+          console.log(`[ok] ${config.label}: instructions updated ${instr.message}`);
+          break;
+        case "up-to-date":
+          console.log(`[ok] ${config.label}: instructions already current (${instr.path ?? instr.message})`);
+          break;
+        case "skipped":
+          console.log(`[skip] ${config.label}: instructions — ${instr.message}`);
+          break;
+      }
+    }
+  }
+
+  // Universal cross-tool file (~/.agents/AGENTS.md). Written once per run when
+  // instructions are enabled, unless detect-mode surfaced no agents at all.
+  if (options.writeInstructions && (!detectInstalledOnly || configuredLabels.size > 0)) {
+    const universal = await installGlobalInstruction("universal", platform, { create: true });
+    switch (universal.status) {
+      case "written":
+        instructionsChanged++;
+        configuredLabels.add(universal.label);
+        console.log(`[ok] ${universal.label}: instructions -> ${universal.path ?? universal.message}`);
+        break;
+      case "updated":
+        instructionsChanged++;
+        configuredLabels.add(universal.label);
+        console.log(`[ok] ${universal.label}: instructions updated ${universal.message}`);
+        break;
+      case "up-to-date":
+        console.log(`[ok] ${universal.label}: instructions already current (${universal.path ?? universal.message})`);
+        break;
+      case "skipped":
+        console.log(`[skip] ${universal.label}: instructions — ${universal.message}`);
+        break;
     }
   }
 
   console.log("");
   console.log("Summary");
   if (detectInstalledOnly) console.log(`Detected: ${detectedCount}/${agentIds.length}`);
-  console.log(`Installed/updated: ${installedCount}`);
-  console.log(`Skipped: ${skippedCount}`);
-  if (installedLabels.length > 0) console.log(`Configured: ${installedLabels.join(", ")}`);
-  if (skippedLabels.length > 0 && skippedLabels.length <= 8) console.log(`Skipped agents: ${skippedLabels.join(", ")}`);
+  if (options.writeMcp) console.log(`MCP configs installed/updated: ${mcpInstalled}`);
+  if (options.writeInstructions) console.log(`Instruction files written/updated: ${instructionsChanged}`);
+  if (configuredLabels.size > 0) console.log(`Configured: ${[...configuredLabels].join(", ")}`);
+  if (skippedLabels.length > 0 && skippedLabels.length <= 8) console.log(`Not detected: ${skippedLabels.join(", ")}`);
 
-  if (detectInstalledOnly && installedCount === 0) {
+  if (detectInstalledOnly && configuredLabels.size === 0) {
     console.log("");
     console.log("No supported agents were detected.");
-    console.log("To create a config anyway, run an explicit flag such as `bhived setup --opencode` or `bhived setup --openclaw`.");
-    console.log("To force every supported config path, run `bhived setup --force-all`.");
+    console.log("To configure one anyway, run an explicit flag such as `bhived setup --opencode` or `bhived setup --openclaw`.");
+    console.log("To force every supported agent, run `bhived setup --force-all`.");
   }
 
-  if (installedCount > 0) {
+  if (configuredLabels.size > 0) {
     console.log("");
     console.log("Next steps");
-    console.log("Restart any configured agent/client so it reloads MCP servers.");
-    console.log("Then ask the agent to use the `bhived` MCP server.");
+    if (options.writeMcp) console.log("Restart any configured agent/client so it reloads MCP servers.");
+    if (options.writeInstructions) console.log("New chats/sessions will pick up the bhived protocol from the global instructions file.");
+  }
+}
+
+/** Refresh only outdated bhived blocks that already exist; print a concise note if anything changed. */
+async function refreshInstructionsQuietly(): Promise<void> {
+  try {
+    const platform: TargetPlatform = detectPlatform();
+    const updated = await refreshOutdatedInstructions(platform);
+    for (const result of updated) {
+      console.log(`[bhived] Updated global instructions for ${result.label}: ${result.message}`);
+    }
+  } catch {
+    // Best-effort — never block a command on instruction refresh.
   }
 }
 

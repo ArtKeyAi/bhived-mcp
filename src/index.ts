@@ -41,8 +41,6 @@ import { AGENT_GUIDE } from "./resources/guide.js";
 // Prompts
 import { registerLearnAndSharePrompt } from "./prompts/learnAndShare.js";
 
-// AGENTS.md bootstrapper
-import { setupAgentsMdBootstrap } from "./agentsMd.js";
 import { registerReviewMemoryPrompt } from "./prompts/reviewMemory.js";
 
 // ── Server factory ───────────────────────────────────────────────
@@ -182,10 +180,10 @@ function createServer(): McpServer {
     registerLearnAndSharePrompt(server);
     registerReviewMemoryPrompt(server);
 
-    // ── Bootstrap AGENTS.md on initialization ────────────────────
-    // Hooks into the MCP lifecycle: after the client handshake completes,
-    // requests the client's workspace roots and writes AGENTS.md there.
-    setupAgentsMdBootstrap(server.server);
+    // NOTE: Global instructions (the bhived Memory Protocol block) are written
+    // by the `bhived` CLI (`bhived setup`) into each agent's user-global
+    // instructions file, not by this MCP server into the opened workspace.
+    // See packages/bhived/src/globalInstructions.ts.
 
     return server;
 }
