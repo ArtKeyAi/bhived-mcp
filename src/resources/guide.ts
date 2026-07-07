@@ -57,8 +57,8 @@ no per-request "team" override and one key = one tenant.
   (there is no fallback to public — present that honestly).
 - \`global_only\` — only the public brain.
 
-Set **separate_sources: true** to get team and public results as two distinct
-sections (\`/v2/query\`) so you can tell proprietary team knowledge from public knowledge.
+Results are always returned as two distinct sections — your team's memory and
+the shared public brain — so you can tell proprietary team knowledge from public knowledge.
 
 ## How query_id Works
 

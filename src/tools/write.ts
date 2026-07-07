@@ -20,17 +20,25 @@ const BaseWriteSchema = z.object({
     text: z
         .string()
         .min(1, "Text must not be empty")
-        .describe("The detailed content of the memory."),
+        .describe(
+            "The memory content. Aim under ~350 words — content past ~512 tokens is never semantically indexed. " +
+            "Front-load stack, versions, and exact error text. Name concrete packages/APIs/versions — " +
+            "a memory with no recognizable entities is invisible to graph retrieval and can never be corroborated."
+        ),
     title: z
         .string()
         .min(1)
         .max(100, "Title must be ≤100 characters")
-        .describe("Short summary (≤100 chars). Used for search ranking."),
+        .describe(
+            "Short summary (≤100 chars). Used by keyword search and the reranker only — " +
+            "title terms are invisible to semantic and graph retrieval, so repeat every key term in `text`."
+        ),
     query_id: z
         .string()
         .optional()
         .describe(
-            "The query_id from your previous bhived_query call, if this relates to a query you made. Creates a feedback loop that improves rankings."
+            "The query_id from your previous bhived_query call, if this relates to a query you made. " +
+            "Without it this write is never linked to the results you used — the corroboration signal that grows their trust cannot fire."
         ),
     model: z
         .string()
@@ -51,7 +59,8 @@ const InstructionSchema = BaseWriteSchema.extend({
         .enum(["new", "update"])
         .default("new")
         .describe(
-            "Use 'update' with supersedes_id ONLY when correcting your own previous instruction."
+            "Use 'update' with supersedes_id ONLY when correcting your own previous instruction — " +
+            "this is also the only combination that bypasses the near-duplicate check (and only on memories you authored)."
         ),
 }).strict();
 
@@ -62,6 +71,13 @@ const UpdateSchema = BaseWriteSchema.extend({
         .string()
         .optional()
         .describe("ID of a previous update this replaces."),
+    action: z
+        .enum(["new", "update"])
+        .default("new")
+        .describe(
+            "Use 'update' with supersedes_id ONLY when correcting your own previous update — " +
+            "this is the only combination that revises an existing memory in place (and only on memories you authored)."
+        ),
 }).strict();
 
 type InstructionInput = z.infer<typeof InstructionSchema>;
@@ -72,7 +88,17 @@ type UpdateInput = z.infer<typeof UpdateSchema>;
 
 const WriteOutputSchema = z.object({
     memory_id: z.string(),
-    action_performed: z.enum(["created", "updated", "superseded"]),
+    action_performed: z.enum([
+        "created",
+        "updated",
+        "superseded",
+        // A different-author near-duplicate the hive routed to the trust layer:
+        // "corroborated" = your write reinforced an existing memory (no new
+        // node — memory_id is that existing memory); "contradicted" = your
+        // dissenting memory was recorded and now contradicts the near-match.
+        "corroborated",
+        "contradicted",
+    ]),
     entities_created: z.number().optional().default(0),
     entities_merged: z.number().optional().default(0),
     relations_created: z.number().optional().default(0),
@@ -93,8 +119,11 @@ correction. Include query_id from bhived_query whenever possible.
 Use this structure:
 **Context:** stack, versions, OS, constraints
 **Solution:** exact steps that worked and why
-**Pitfalls:** failed attempts, errors, and why they failed
+**Pitfalls:** failed attempts, error messages quoted VERBATIM, and why they failed
 **Verified:** test/build/manual check performed
+
+Quote error messages verbatim — exact error text is the strongest search key
+future agents will use.
 
 Do not write trivial tasks or unverified guesses.
 📍 Where it lands: your API key decides the destination server-side. With a
@@ -113,9 +142,14 @@ keep only public package names, versions, error shapes, and sanitized examples.`
 const MISTAKE_DESC = `Warn future agents about an approach that DOESN'T work.
 Describe what you tried, how it failed, and why. Be specific about:
 - The exact approach or code that failed
-- The error message or unexpected behavior
+- The error message or unexpected behavior (quoted VERBATIM — it's what future agents search)
 - The conditions under which it fails (versions, OS, config)
 - Why it fails (root cause if you know it)
+
+Phrase it to match the question a future agent would ask right before making
+this mistake. Keep it short and directly contradictory — "Do NOT use X for Y;
+it fails with Z" — long structured mistakes dilute the contradiction check and
+rarely surface as warnings.
 
 Use after verified dead ends, repeated pitfalls, or when a user correction
 proves the previous approach wrong. Include query_id whenever possible.
@@ -137,7 +171,8 @@ Use this for version changes, API deprecations, breaking changes,
 or any time-sensitive information. Include:
 - What changed and when
 - The new correct approach
-- What the old approach was (so agents recognize outdated advice)
+- What the old approach was — name BOTH old and new version numbers / API names
+  VERBATIM (agents about to hit stale behavior search with the old tokens)
 
 Include query_id whenever possible.
 📍 Where it lands: your API key decides the destination server-side. With a
@@ -198,7 +233,10 @@ async function handleWrite(
 
         return {
             content: [
-                { type: "text" as const, text: formatWriteResult(result, memoryType) },
+                {
+                    type: "text" as const,
+                    text: formatWriteResult(result, memoryType, Boolean(params.query_id)),
+                },
             ],
             structuredContent: structured,
         };

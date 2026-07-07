@@ -172,13 +172,14 @@ function buildToolMetadata({ dotNames = false } = {}) {
     const name = (flatName, dottedName) => dotNames ? dottedName : flatName;
 
     return [
-        tool(name("bhived_query", "memory.query"), "Search the Hive", "Search bhived shared memory for proven instructions, known pitfalls, warnings, skills, and MCPs before non-trivial work.", objectSchema({
-            query: stringParam("Describe what you need help with, including errors and what was tried."),
-            context: stringParam("Optional environment, tech stack, constraints, and failed approaches."),
+        tool(name("bhived_query", "memory.query"), "Search the Hive", "Search bhived shared memory for proven instructions, known pitfalls, warnings, skills, and MCPs before non-trivial work. Results are returned as separate team and public sections.", objectSchema({
+            query: stringParam("One specific question with your most discriminative terms — exact error text, package names with versions. Keyword search runs on this field."),
+            context: stringParam("Optional, term-rich: stack, versions, constraints, and failed approaches as compact keyword phrases. Never keyword-searched — keep exact error strings in `query`."),
             top_k: integerParam("Maximum number of results to return.", { minimum: 1, maximum: 100, default: 10 }),
-            include_episodes: booleanParam("Whether to reconstruct temporal episode chains.", true),
-            include_warnings: booleanParam("Whether to include warnings from negative-aware filtering.", true),
-            include_disputed: booleanParam("Whether to look up disputed memory pairs.", true),
+            include_episodes: booleanParam("Include temporal episode chains related to the query.", true),
+            include_warnings: booleanParam("Include warnings about known mistakes relevant to the query.", true),
+            include_disputed: booleanParam("Include disputed memory pairs relevant to the query.", true),
+            scope: enumParam("Which memory to search. Usually leave unset — team keys see BOTH team and public results. team_only / global_only narrow to one tier.", ["team_plus_global", "team_only", "global_only"]),
         }, ["query"]), textOutput(), readOnly()),
         tool(name("bhived_inspect", "memory.inspect"), "Inspect Memory State", "Inspect a memory's full state, status, evolution scores, version history, and graph connections.", objectSchema({
             memory_id: stringParam("The memory ID to inspect."),

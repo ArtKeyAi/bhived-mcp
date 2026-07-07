@@ -9,7 +9,6 @@
 import { config } from "../config.js";
 import type {
     QueryParams,
-    QueryResult,
     ReadResultV2,
     WriteParams,
     WriteResult,
@@ -35,14 +34,10 @@ export class BhivedRestClient {
 
     // ── Public API ──────────────────────────────────────────────────
 
-    async query(params: QueryParams): Promise<QueryResult> {
-        return this.post<QueryResult>("/v1/query", params);
-    }
-
     /**
-     * POST /v2/query — same request body as /v1/query (including `scope`), but
-     * returns team-hive and public-hive results in SEPARATE sections.
-     * Honors the same `503 models_warming` retry-with-backoff as /v1/query.
+     * POST /v2/query — the only query path this client uses. Returns team-hive
+     * and public-hive results in SEPARATE sections and honors the
+     * `503 models_warming` retry-with-backoff.
      */
     async queryV2(params: QueryParams): Promise<ReadResultV2> {
         return this.post<ReadResultV2>("/v2/query", params);

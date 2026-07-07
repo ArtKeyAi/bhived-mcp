@@ -133,26 +133,11 @@ export interface FailedApproach {
 /** `ScoredMemory` is the wire name for the ranked-memory shape; identical to QueryMemory. */
 export type ScoredMemory = QueryMemory;
 
-export interface QueryResult {
-    query?: string;
-    query_id: string;
-    recommendations: QueryMemory[];
-    episodes?: QueryEpisode[];
-    warnings?: QueryWarning[];
-    /** Live API key is `disputed`; older docs say `disputed_pairs`. Readers accept both. */
-    disputed?: DisputedPair[];
-    disputed_pairs?: DisputedPair[];
-    failed_approaches?: FailedApproach[];
-    total_results?: number;
-    metadata?: Record<string, unknown>;
-}
-
 /**
- * `ReadResultV2` envelope from POST /v2/query.
- *
- * Same request body as /v1/query (including `scope`), but team-hive and
- * public-hive results are returned as SEPARATE sections rather than one merged
- * `recommendations` list. Each section receives the request's full `top_k`.
+ * `ReadResultV2` envelope from POST /v2/query — the only query path this
+ * client uses. Team-hive and public-hive results are returned as SEPARATE
+ * sections rather than one merged list. Each section receives the request's
+ * full `top_k`.
  *
  * Behavior:
  * - Non-team caller → `team_*` lists are empty.
@@ -206,7 +191,7 @@ export interface WriteResult {
     fingerprint_computed: boolean;
     query_id_linked: string | null;
     supersedes_id_linked: string | null;
-    action_performed: "created" | "updated" | "superseded";
+    action_performed: "created" | "updated" | "superseded" | "corroborated" | "contradicted";
     corroborations_created: number;
     contradictions_created: number;
 }

@@ -1,8 +1,7 @@
 /**
  * Query Result Formatter
  *
- * Formats /v1/query and /v2/query results as clean Markdown optimized for LLM
- * parsing.
+ * Formats /v2/query results as clean Markdown optimized for LLM parsing.
  *
  * Design principles:
  * - Markdown for universal LLM readability
@@ -14,13 +13,12 @@
  * "Recommended Skills" / "Recommended MCPs" sections that display only the
  * description, resources, and activation ID.
  *
- * /v2/query additionally splits results into two tiers — "Your Team's Memory"
- * (team-private) and "Shared Public Brain" (public) — so agents can tell
- * proprietary team knowledge from public knowledge.
+ * Results are split into two tiers — "Your Team's Memory" (team-private) and
+ * "Shared Public Brain" (public) — so agents can tell proprietary team
+ * knowledge from public knowledge.
  */
 
 import type {
-    QueryResult,
     ReadResultV2,
     ReadScope,
     QueryMemory,
@@ -48,35 +46,9 @@ function trimTextForReadability(text: string, maxWords: number, memId: string | 
     return `${truncated}...${notice}`;
 }
 
-// ── v1 (merged) ──────────────────────────────────────────────────
-
-export function formatQueryResult(result: QueryResult, scope?: ReadScope): string {
-    const sections: string[] = [];
-
-    const recs = result.recommendations ?? [];
-
-    // ── Header + tenancy banner ──
-    sections.push(`# bhived Results (${recs.length} found)\n`);
-    sections.push(`${tenancyBanner("read")}\n`);
-
-    // ── Recommendations / Skills / MCPs ──
-    sections.push(...renderRecommendationSet(recs, scope));
-
-    // ── Warnings / Disputed / Episodes / Failed approaches ──
-    sections.push(...renderWarnings(result.warnings ?? []));
-    sections.push(...renderDisputed(result.disputed ?? result.disputed_pairs ?? []));
-    sections.push(...renderEpisodes(result.episodes ?? []));
-    sections.push(...renderFailedApproaches(result.failed_approaches ?? []));
-
-    // ── Query ID (critical for feedback loop) ──
-    sections.push(...renderQueryFooter(result.query_id));
-
-    return sections.join("\n");
-}
-
 // ── v2 (team vs public separated) ────────────────────────────────
 
-export function formatQueryResultV2(result: ReadResultV2): string {
+export function formatQueryResultV2(result: ReadResultV2, scope?: ReadScope): string {
     const sections: string[] = [];
 
     const teamRecs = result.team_recommendations ?? [];
@@ -85,15 +57,27 @@ export function formatQueryResultV2(result: ReadResultV2): string {
     sections.push("# bhived Results — Team + Public (separated)\n");
     sections.push(`${tenancyBanner("read")}\n`);
 
+    // A tier the caller excluded via `scope` is empty BY DESIGN — never diagnose
+    // that as "hive has nothing" or "a channel failed".
     // The "not provisioned as a team key" caveat only makes sense when tenancy is
     // unverified; a confirmed team key would contradict its own banner above.
     const teamEmptyMsg =
-        getTenancy().state === "team"
+        scope === "global_only"
+            ? "*Team memory skipped — this query was scoped to `global_only`. Your team hive was not searched.*"
+            : getTenancy().state === "team"
             ? "*No team-private memories matched this query.* Your team hive has nothing on this topic yet — " +
               "this is not a global fallback (public results are shown separately below)."
             : "*No team-private memories matched this query.* If you expected team results, either your team hive " +
               "has nothing on this topic yet, or your key is not provisioned as a team key (it would silently read " +
               "public-only). This is not a global fallback — team and public are shown separately below.";
+
+    const publicEmptyMsg =
+        scope === "team_only"
+            ? "*Public brain skipped — this query was scoped to `team_only`. Nothing public was searched (no fallback).*"
+            : // No score floor exists server-side, so an empty public tier is
+              // rarely caused by query wording — say what it usually means.
+              "*No public memories matched this query.* This is unusual against the public brain — " +
+              "a retrieval channel may have failed; retry once before concluding nothing exists.";
 
     // ── 🏠 Team tier ──
     sections.push(`## 🏠 Your Team's Memory (${teamRecs.length} found)\n`);
@@ -117,7 +101,7 @@ export function formatQueryResultV2(result: ReadResultV2): string {
             result.public_disputed ?? [],
             result.public_episodes ?? [],
             result.public_failed_approaches ?? [],
-            "*No public memories matched this query.*"
+            publicEmptyMsg
         )
     );
 
@@ -171,7 +155,7 @@ function renderTier(
 // ── Shared section renderers ─────────────────────────────────────
 
 /** Partition recommendations into regular / skill / mcp and render each block. */
-function renderRecommendationSet(recs: QueryMemory[], scope?: ReadScope): string[] {
+function renderRecommendationSet(recs: QueryMemory[]): string[] {
     const sections: string[] = [];
 
     const regularMemories: QueryMemory[] = [];
@@ -188,14 +172,8 @@ function renderRecommendationSet(recs: QueryMemory[], scope?: ReadScope): string
         }
     }
 
+    // Callers gate on recs.length > 0; this only fires if every entry was null.
     if (regularMemories.length === 0 && skillMemories.length === 0 && mcpMemories.length === 0) {
-        // Under team_only there is NO fallback to public — say so honestly rather
-        // than implying a wider search would help (plan §2).
-        sections.push(
-            scope === "team_only"
-                ? "No team-private memories matched. This did NOT fall back to public — your team hive has nothing on this topic yet.\n"
-                : "No matching memories found. Try broadening your query.\n"
-        );
         return sections;
     }
 
@@ -259,7 +237,7 @@ function renderQueryFooter(queryId: string): string[] {
     return [
         "---",
         `**query_id**: \`${queryId}\``,
-        "Next step: use relevant recommendations or activate matching skills/MCPs, then verify your result. If you learn something reusable or the user correction was right, write back with this query_id (using the SAME key).",
+        "Next step: use relevant recommendations or activate matching skills/MCPs, then verify your result. If you learn something reusable or the user correction was right, write back with this query_id (using the SAME key) — a write-back without it cannot corroborate the memories that helped you; their trust scores only grow when you pass it back.",
     ];
 }
 
@@ -317,7 +295,8 @@ function formatMemory(mem: QueryMemory, rank: number): string {
 function formatRecommendedSkills(skills: QueryMemory[]): string {
     const lines: string[] = [];
     lines.push("## 🔧 Recommended Skills\n");
-    lines.push("> Activate a skill with `bhived_initiate_skill(memory_id)` to load its instructions, scripts, and resources.\n");
+    lines.push("> Activate a skill with `bhived_initiate_skill(memory_id)` to load its instructions, scripts, and resources.");
+    lines.push("> Results often contain near-duplicate capabilities — activate at most ONE that best matches your task.\n");
 
     const shown = skills.slice(0, MAX_SKILLS_SHOWN);
     shown.forEach((mem, i) => {
@@ -346,11 +325,15 @@ function formatRecommendedSkills(skills: QueryMemory[]): string {
             lines.push(`📦 **Resources:** ${resources.join(" · ")}\n`);
         }
 
-        // Usage stats (if available)
+        // Usage stats — only with real usage. The backend sends explicit zeros
+        // for never-activated capabilities; rendering "used by 0 · success: 0%"
+        // reads as evidence of failure when it's just absence of data.
         const stats: string[] = [];
         const usage = sm.usage_count ?? sm.activation_count;
-        if (usage !== undefined) stats.push(`used by ${usage} agents`);
-        if (sm.success_rate !== undefined) stats.push(`success: ${Math.round(sm.success_rate * 100)}%`);
+        if (usage !== undefined && usage > 0) {
+            stats.push(`used by ${usage} agents`);
+            if (sm.success_rate !== undefined) stats.push(`success: ${Math.round(sm.success_rate * 100)}%`);
+        }
         if (stats.length > 0) {
             lines.push(`📊 ${stats.join(" · ")}\n`);
         }
@@ -375,7 +358,8 @@ function formatRecommendedSkills(skills: QueryMemory[]): string {
 function formatRecommendedMcps(mcps: QueryMemory[]): string {
     const lines: string[] = [];
     lines.push("## 🔌 Recommended MCPs\n");
-    lines.push("> Activate an MCP with `bhived_initiate_mcp(memory_id)` to spawn it and use its tools.\n");
+    lines.push("> Activate an MCP with `bhived_initiate_mcp(memory_id)` to spawn it and use its tools.");
+    lines.push("> Results often contain near-duplicate capabilities — activate at most ONE that best matches your task.\n");
 
     const shown = mcps.slice(0, MAX_MCPS_SHOWN);
     shown.forEach((mem, i) => {
@@ -396,11 +380,13 @@ function formatRecommendedMcps(mcps: QueryMemory[]): string {
             lines.push(`🔧 **Tools:** ${mm.tools_hint.join(", ")}\n`);
         }
 
-        // Usage stats (if available)
+        // Usage stats — only with real usage (see skills note above).
         const stats: string[] = [];
         const usage = mm.usage_count ?? mm.activation_count;
-        if (usage !== undefined) stats.push(`used by ${usage} agents`);
-        if (mm.success_rate !== undefined) stats.push(`success: ${Math.round(mm.success_rate * 100)}%`);
+        if (usage !== undefined && usage > 0) {
+            stats.push(`used by ${usage} agents`);
+            if (mm.success_rate !== undefined) stats.push(`success: ${Math.round(mm.success_rate * 100)}%`);
+        }
         if (stats.length > 0) {
             lines.push(`📊 ${stats.join(" · ")}\n`);
         }

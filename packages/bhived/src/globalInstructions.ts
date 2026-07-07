@@ -91,8 +91,9 @@ bhived is shared memory for AI agents. Before solving specialized, unfamiliar, r
 - Also query after 2 failed attempts, version/API uncertainty, confusing errors, or when the user corrects you and you need to verify the better approach.
 - Ask specific queries with stack, versions, exact error, goal, constraints, and what you already tried.
 - Save the returned \`query_id\`. Treat it as required if you later write back.
+- Verify results actually match your stack/versions before applying them — scores are retrieval match, not verified correctness, and an empty Warnings section does not mean an approach is safe.
 - If results include a relevant skill or MCP, activate it before solving manually. Use only capabilities that clearly match the task.
-- Your API key sets your scope: a team key reads team + public and **writes land in your team's private memory** (not the public brain). Use \`scope\` (\`team_only\`/\`global_only\`) or \`separate_sources\` on \`bhived_query\` to control or separate the two tiers.
+- Your API key sets your scope: a team key reads team + public and **writes land in your team's private memory** (not the public brain). Results always show team and public sections separately; use \`scope\` (\`team_only\`/\`global_only\`) on \`bhived_query\` to narrow.
 
 ## Close the Loop
 
@@ -100,18 +101,21 @@ bhived is shared memory for AI agents. Before solving specialized, unfamiliar, r
 - If the user corrected you and they were right, write the corrected lesson with \`query_id\` and mention what was wrong before.
 - Use the **same key** for the query and the follow-up write — a \`query_id\` from a different tenant/hive is not linked.
 - Use \`bhived_write_instruction\` for what worked, \`bhived_write_mistake\` for dead ends/errors, and \`bhived_write_update\` for factual/version changes.
+- Keep writes under ~350 words, name concrete packages/APIs/versions, and quote error messages verbatim.
 - Do not write for trivial tasks, unverified guesses, secrets, credentials, private URLs, or user/customer data.
 
 ## Write Format
 
-Use concise, searchable text:
+Use concise, searchable text. For instructions:
 
 \`\`\`
 **Context:** stack, versions, OS, constraints
 **Solution:** exact steps that worked
-**Pitfalls:** failed attempts, errors, and why they failed
+**Pitfalls:** failed attempts, errors quoted verbatim, and why they failed
 **Verified:** test/build/manual check performed
 \`\`\`
+
+For mistakes: approach tried → exact error (verbatim) → why it failed → what to do instead.
 ${BHIVED_END}`;
 }
 
@@ -195,8 +199,7 @@ export const GLOBAL_INSTRUCTION_TARGETS: Record<GlobalTargetId, GlobalInstructio
     filename: "",
     docs: "https://support.claude.com/en/articles/10185728-understanding-claude-s-personalization-features",
     resolvePath: () => "",
-    skipReason:
-      "no global instructions file on disk — set it in Settings > \"Instructions for Claude\" (in-app).",
+    skipReason: "no global instructions file on disk (Claude Desktop stores instructions in-app).",
   },
   cursor: {
     agentId: "cursor",
@@ -209,7 +212,7 @@ export const GLOBAL_INSTRUCTION_TARGETS: Record<GlobalTargetId, GlobalInstructio
     // CLI writes to. Not officially documented, but the de-facto ecosystem path;
     // harmless if Cursor ignores it. `alwaysApply: true` makes it always-on.
     resolvePath: () => home(".cursor", "rules", "bhived.mdc"),
-    note: "Global Cursor rule (~/.cursor/rules/bhived.mdc, alwaysApply). If unused, also settable in Cursor Settings > Rules.",
+    note: "Global Cursor rule at ~/.cursor/rules/bhived.mdc (alwaysApply: true).",
   },
   vscode: {
     agentId: "vscode",

@@ -43,15 +43,26 @@ import { registerLearnAndSharePrompt } from "./prompts/learnAndShare.js";
 
 import { registerReviewMemoryPrompt } from "./prompts/reviewMemory.js";
 
+// ── Server-level instructions ────────────────────────────────────
+// Injected into the client's system prompt via the MCP initialize
+// response, so agents get the usage protocol even when the host was
+// never configured with `bhived setup`. Compressed version of the
+// bhived Memory Protocol (packages/bhived/src/globalInstructions.ts).
+
+const SERVER_INSTRUCTIONS = `bhived is shared memory for AI agents. Before solving specialized, unfamiliar, risky, or medium/hard tasks — and after 2 failed attempts, version/API uncertainty, or a user correction — call \`bhived_query\` instead of guessing. Put your most discriminative terms (exact error text, package names with versions) in \`query\`; put stack, constraints, and failed approaches as compact keyword phrases in \`context\`, never narrative prose. Save the returned \`query_id\`. Results come back as separate team and public sections. Verify each result actually matches your stack before applying it — scores are retrieval similarity, not verified correctness, and an empty Warnings section is NOT evidence an approach is safe. After a verified success or dead end, close the loop with \`bhived_write_instruction\` / \`bhived_write_mistake\` / \`bhived_write_update\`, passing the same \`query_id\` under the same API key. Keep writes under ~350 words, name concrete packages/versions, and quote errors verbatim. Read \`bhived://guide\` for details.`;
+
 // ── Server factory ───────────────────────────────────────────────
 // Creates a fully-configured McpServer instance.
 // Used once for stdio, or per-request for stateless HTTP.
 
 function createServer(): McpServer {
-    const server = new McpServer({
-        name: "bhived-mcp",
-        version: "1.2.0",
-    });
+    const server = new McpServer(
+        {
+            name: "bhived-mcp",
+            version: "1.2.0",
+        },
+        { instructions: SERVER_INSTRUCTIONS }
+    );
 
     // ── Register tools — Core ────────────────────────────────────
     registerQueryTool(server);
@@ -180,9 +191,10 @@ function createServer(): McpServer {
     registerLearnAndSharePrompt(server);
     registerReviewMemoryPrompt(server);
 
-    // NOTE: Global instructions (the bhived Memory Protocol block) are written
-    // by the `bhived` CLI (`bhived setup`) into each agent's user-global
-    // instructions file, not by this MCP server into the opened workspace.
+    // NOTE: The full bhived Memory Protocol block is written by the `bhived`
+    // CLI (`bhived setup`) into each agent's user-global instructions file.
+    // Hosts that never ran setup still receive the compressed protocol via
+    // SERVER_INSTRUCTIONS above (MCP initialize → system prompt).
     // See packages/bhived/src/globalInstructions.ts.
 
     return server;

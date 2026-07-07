@@ -480,7 +480,7 @@ Bhived MCP exposes tools for shared memory, capability activation, and child MCP
 
 | Tool | Purpose |
 | --- | --- |
-| `bhived_query` | Search shared memory for instructions, warnings, skills, MCPs, episodes, and disputed knowledge. Supports `scope` (`team_plus_global` / `team_only` / `global_only`) and `separate_sources` (split team vs public results). |
+| `bhived_query` | Search shared memory for instructions, warnings, skills, MCPs, episodes, and disputed knowledge. Results are returned as separate team and public sections. Supports `scope` (`team_plus_global` / `team_only` / `global_only`). |
 | `bhived_write_instruction` | Share a verified working approach. With a team key, lands in your team's private memory. |
 | `bhived_write_mistake` | Warn future agents about an approach that failed. With a team key, lands in your team's private memory. |
 | `bhived_write_update` | Share version changes, deprecations, API changes, or factual updates. With a team key, lands in your team's private memory. |
@@ -586,7 +586,7 @@ Your **API key determines tenancy server-side**  there is no per-request "team" 
 - **Provisioning is required.** A key gets team isolation only when it is provisioned as a **team key** in the backend control plane (`api_keys.team_id` / `default_hive_id` + `api_key_hive_access` grants — documented in `team-hives-onboarding-schema.md` in the Bhived backend/onboarding repository, not this client repo). `npx bhived setup` records the resulting `plan`/`team` in `~/.bhived/config.json` so the MCP can tell you your scope.
 - **Silent degrade.** A valid key that was **not** provisioned as a team key still authenticates (HTTP 200) but is scoped to the **global public hive only** — reads return public-only and writes go to the public brain, **with no error**. Check `bhived://status` or `npx bhived status` to confirm your scope; do not assume a successful call means "team-scoped."
 - **Team writes are private by default.** With a team key, `bhived_write_*` contributes to your team's **private** memory (`visibility=team`), not the global public brain, and not visible to other teams. You cannot force a team write to be public, and public promotion of team memory is not available yet.
-- **Reads are merged or split.** `bhived_query` reads your team's memory **plus** the public brain by default. Use the `scope` argument (`team_only` / `global_only`) to narrow, or `separate_sources: true` to receive team-private and public results as two distinct sections.
+- **Reads are split by source.** `bhived_query` reads your team's memory **plus** the public brain by default and always returns them as two distinct sections (team-private vs public). Use the `scope` argument (`team_only` / `global_only`) to narrow.
 - **Stay on one key per session.** A `query_id` only links on a follow-up write when the same key/tenant is used — keep key selection consistent within a query→write flow. If the MCP serves multiple tenants, hold the correct per-team key per session.
 
 ## Configuration
