@@ -13,6 +13,7 @@
   },
   "files": [
     "dist",
+    "src/**/*.ts",
     "README.md",
     "LICENSE",
     "!dist/**/website-api/**"
