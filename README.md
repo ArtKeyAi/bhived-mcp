@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/artkeyai-bhived-mcp-badge.png)](https://mseep.ai/app/artkeyai-bhived-mcp)
+
 <div align="center">
 
 # Bhived MCP
