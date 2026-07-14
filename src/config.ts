@@ -37,6 +37,13 @@ export interface BhivedConfig {
     team?: { id: string; name?: string };
     /** Plan recorded at CLI sign-in (e.g. "team", "pro", "free"). */
     plan?: string;
+    /**
+     * True when the active key IS the stored key (or came from the stored
+     * config). Only then may the MCP persist live scope to config.json or
+     * rewrite instruction files — otherwise it would stamp another key's
+     * scope onto state that agents using the stored key rely on.
+     */
+    tenancyTrusted: boolean;
 
     // ── Capability limits ────────────────────────────────────────────
 
@@ -88,6 +95,7 @@ export function loadConfig(): BhivedConfig {
         modelWarmupRetries: parseNonNegativeInt(process.env.BHIVED_WARMUP_RETRIES, 5),
         team: tenancyTrusted ? storedConfig?.team : undefined,
         plan: tenancyTrusted ? storedConfig?.plan : undefined,
+        tenancyTrusted,
 
         // Capability limits (configurable via env vars)
         maxActiveSkills: parseInt(process.env.BHIVED_MAX_SKILLS ?? "5", 10),
@@ -106,8 +114,13 @@ interface StoredBhivedConfig {
     plan?: string;
 }
 
+/** Path of the CLI-owned credential/scope store, shared with `bhived` setup. */
+export function getStoredConfigPath(): string {
+    return join(homedir(), ".bhived", "config.json");
+}
+
 function readStoredConfig(): StoredBhivedConfig | null {
-    const configPath = join(homedir(), ".bhived", "config.json");
+    const configPath = getStoredConfigPath();
 
     if (!existsSync(configPath)) return null;
 

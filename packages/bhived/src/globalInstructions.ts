@@ -22,6 +22,18 @@ export const BHIVED_START = "<!-- BHIVED_INSTRUCTIONS_START -->";
 export const BHIVED_END = "<!-- BHIVED_INSTRUCTIONS_END -->";
 export const VERSION_PREFIX = "<!-- BHIVED_VERSION:";
 export const VERSION_SUFFIX = "-->";
+export const SCOPE_PREFIX = "<!-- BHIVED_SCOPE:";
+export const SCOPE_SUFFIX = "-->";
+
+/**
+ * The API key's verified scope, stamped into the instruction block so the
+ * protocol copy matches what the key can actually do:
+ *  - "team"     → GET /v1/subscription returned plan "team".
+ *  - "personal" → GET /v1/subscription returned plan "pro" or "free".
+ *  - "unknown"  → the live check has never succeeded and no stored metadata
+ *                 exists; the block keeps conditional both-cases copy.
+ */
+export type InstructionScope = "team" | "personal" | "unknown";
 
 /**
  * Global-instruction targets: the 14 MCP agents plus a cross-tool "universal"
@@ -77,10 +89,29 @@ export function bhivedVersion(): string {
 
 // ── Protocol block ───────────────────────────────────────────────
 
-/** The bhived Memory Protocol, wrapped in idempotent start/end/version markers. */
-export function bhivedInstructionsBlock(version: string = CLI_VERSION): string {
+/** Scope-specific line telling agents what THIS key reads and where writes land. */
+const SCOPE_LINES: Record<InstructionScope, string> = {
+  team:
+    "- Your API key is **team-scoped**: `bhived_query` reads your team's private memory + the shared public brain (returned as separate sections), and writes land in your **team's private memory** — not the global public brain. Use `scope` (`team_only`/`global_only`) on `bhived_query` to narrow reads.",
+  personal:
+    "- Your API key is **personal**: reads and writes use the **global public brain** only — there is no private team tier on this key, so never write anything confidential or team-internal. `scope: team_only` on `bhived_query` returns nothing; leave `scope` unset.",
+  unknown:
+    "- Your API key sets your scope: a team key reads team + public and **writes land in your team's private memory** (not the public brain); a personal key reads/writes the global public brain only. Use `scope` (`team_only`/`global_only`) on `bhived_query` to narrow.",
+};
+
+/**
+ * The bhived Memory Protocol, wrapped in idempotent start/end/version/scope
+ * markers. `scope` should be the key's verified scope when known — the CLI and
+ * the MCP server re-verify it via GET /v1/subscription and rewrite this block
+ * when it changes.
+ */
+export function bhivedInstructionsBlock(
+  version: string = CLI_VERSION,
+  scope: InstructionScope = "unknown"
+): string {
   return `${BHIVED_START}
 ${VERSION_PREFIX} ${version} ${VERSION_SUFFIX}
+${SCOPE_PREFIX} ${scope} ${SCOPE_SUFFIX}
 # bhived Memory Protocol
 
 bhived is shared memory for AI agents. Before solving specialized, unfamiliar, risky, or medium/hard work, query bhived first instead of guessing.
@@ -93,7 +124,7 @@ bhived is shared memory for AI agents. Before solving specialized, unfamiliar, r
 - Save the returned \`query_id\`. Treat it as required if you later write back.
 - Verify results actually match your stack/versions before applying them — scores are retrieval match, not verified correctness, and an empty Warnings section does not mean an approach is safe.
 - If results include a relevant skill or MCP, activate it before solving manually. Use only capabilities that clearly match the task.
-- Your API key sets your scope: a team key reads team + public and **writes land in your team's private memory** (not the public brain). Results always show team and public sections separately; use \`scope\` (\`team_only\`/\`global_only\`) on \`bhived_query\` to narrow.
+${SCOPE_LINES[scope]}
 
 ## Close the Loop
 
@@ -133,6 +164,56 @@ export function extractEmbeddedVersion(content: string): string | null {
   const versionEnd = content.indexOf(VERSION_SUFFIX, afterPrefix);
   if (versionEnd === -1) return null;
   return content.substring(afterPrefix, versionEnd).trim();
+}
+
+/** Extract the stamped scope from a block; null for pre-scope blocks or garbage. */
+export function extractEmbeddedScope(content: string): InstructionScope | null {
+  const scopeStart = content.indexOf(SCOPE_PREFIX);
+  if (scopeStart === -1) return null;
+
+  const afterPrefix = scopeStart + SCOPE_PREFIX.length;
+  const scopeEnd = content.indexOf(SCOPE_SUFFIX, afterPrefix);
+  if (scopeEnd === -1) return null;
+  const value = content.substring(afterPrefix, scopeEnd).trim();
+  return value === "team" || value === "personal" || value === "unknown" ? value : null;
+}
+
+/**
+ * Compare version strings (`1.2.3`, `1.3.0-rc.1`): -1 when `a` is older than
+ * `b`, 0 equal, 1 newer. Semver-aware where it matters here: a prerelease
+ * (`-suffix`) sorts OLDER than its release core. Asymmetric on garbage by
+ * design: an unparseable STAMPED version (`a`) sorts older so the block gets
+ * refreshed, but an unparseable RUNNING version (`b`, e.g. the "unknown"
+ * fallback when package.json is unreadable) must never judge a validly-stamped
+ * block as outdated — that would rewrite every file with version "unknown".
+ */
+export function compareVersions(a: string | null, b: string): number {
+  const pa = parseVersion(a);
+  const pb = parseVersion(b);
+  if (!pa && !pb) return 0;
+  if (!pa) return -1;
+  if (!pb) return 1;
+  for (let i = 0; i < Math.max(pa.core.length, pb.core.length); i++) {
+    const da = pa.core[i] ?? 0;
+    const db = pb.core[i] ?? 0;
+    if (da !== db) return da < db ? -1 : 1;
+  }
+  // Equal numeric cores: the version WITH a prerelease suffix is older.
+  if (pa.pre === null && pb.pre === null) return 0;
+  if (pa.pre === null) return 1;
+  if (pb.pre === null) return -1;
+  return pa.pre < pb.pre ? -1 : pa.pre > pb.pre ? 1 : 0;
+}
+
+function parseVersion(value: string | null): { core: number[]; pre: string | null } | null {
+  if (!value) return null;
+  const dash = value.indexOf("-");
+  const coreStr = dash === -1 ? value : value.slice(0, dash);
+  if (!/^\d+(\.\d+)*$/.test(coreStr)) return null;
+  return {
+    core: coreStr.split(".").map((n) => parseInt(n, 10)),
+    pre: dash === -1 ? null : value.slice(dash + 1),
+  };
 }
 
 /** Replace the marked bhived block in `content` with `newSection`, preserving surrounding text. */

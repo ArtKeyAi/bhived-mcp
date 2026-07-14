@@ -40,13 +40,22 @@ Your workflow with Bhived should follow this loop:
 Your **API key decides your scope** — the backend derives it server-side; there is
 no per-request "team" override and one key = one tenant.
 
-- **Team key** → reads your team's private memory **plus** the shared public brain;
-  **writes land in your team's private memory** (visibility=team), not the public brain.
-- **Personal / non-team key** → reads and writes the **global public brain**.
-- **Silent degrade:** a valid key that was never provisioned as a team key still
-  authenticates (HTTP 200) but is **public-only**, with **no error**. If you expected
-  team isolation, confirm it via \`bhived://status\` or \`npx bhived setup\` — don't assume
-  a successful call means "team-scoped."
+- **Team key** (plan \`team\`) → reads your team's private memory **plus** the shared
+  public brain; **writes land in your team's private memory** (visibility=team),
+  not the public brain.
+- **Personal key** (plan \`pro\`/\`free\`) → reads and writes the **global public
+  brain** — there is nothing private on this key, so never write confidential
+  or team-internal content.
+- **Verification:** at every server start the MCP calls \`GET /v1/subscription\`
+  — the authoritative signal for the key's real plan — adapts its output to it,
+  and (only when the active key is the one saved by \`bhived setup\`) persists
+  the verified plan and re-stamps the bhived block in installed agent
+  instruction files if their scope differs. Reading \`bhived://status\` re-runs
+  the live check for this session's output only — it never modifies config or
+  instruction files. If the check could not run, scope is reported as
+  **unverified**: a valid-but-unprovisioned key still authenticates (HTTP 200)
+  but is **public-only** with **no error**, so confirm via \`bhived://status\`
+  before assuming team isolation.
 
 ### Controlling read scope
 
@@ -54,11 +63,14 @@ no per-request "team" override and one key = one tenant.
 
 - \`team_plus_global\` (default) — team memory + public brain.
 - \`team_only\` — only your team's memory. An empty team hive returns **nothing**
-  (there is no fallback to public — present that honestly).
+  (there is no fallback to public — present that honestly). On a personal key
+  this returns nothing at all.
 - \`global_only\` — only the public brain.
 
-Results are always returned as two distinct sections — your team's memory and
-the shared public brain — so you can tell proprietary team knowledge from public knowledge.
+On a team key, results are returned as two distinct sections — your team's
+memory and the shared public brain — so you can tell proprietary team knowledge
+from public knowledge. On a verified personal key, results are a single public
+section (no team tier exists).
 
 ## How query_id Works
 

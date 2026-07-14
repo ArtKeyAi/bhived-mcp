@@ -1,6 +1,6 @@
 {
   "name": "bhived-mcp",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "mcpName": "io.github.ArtKeyAi/bhived-mcp",
   "description": "Bhived MCP Server — shared knowledge graph for AI agents. Query, write, and inspect collective AI knowledge through the Model Context Protocol.",
   "type": "module",
@@ -14,13 +14,14 @@
   "files": [
     "dist",
     "src/**/*.ts",
+    "assets",
     "README.md",
     "LICENSE",
     "!dist/**/website-api/**"
   ],
   "scripts": {
     "clean": "rimraf dist",
-    "build": "tsc && npm run build --workspace bhived",
+    "build": "npm run build --workspace bhived && tsc",
     "build:mcp": "tsc",
     "mcpb:prepare": "node scripts/prepare-mcpb.mjs",
     "mcpb:prepare:smithery": "node -e \"process.env.SMITHERY_SCORE_METADATA='1'; import('./scripts/prepare-mcpb.mjs')\"",
@@ -33,10 +34,11 @@
     "start": "node dist/index.js",
     "inspect": "npx @modelcontextprotocol/inspector node dist/index.js",
     "prepare": "npm run build",
-    "prepublishOnly": "npm run clean && npm run build"
+    "prepublishOnly": "npm run clean && npm run build && node scripts/check-publish-order.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
+    "bhived": "^1.2.0",
     "express": "^5.2.1",
     "zod": "^4.3.6"
   },

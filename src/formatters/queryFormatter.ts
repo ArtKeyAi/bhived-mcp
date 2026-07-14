@@ -54,8 +54,36 @@ export function formatQueryResultV2(result: ReadResultV2, scope?: ReadScope): st
     const teamRecs = result.team_recommendations ?? [];
     const publicRecs = result.public_recommendations ?? [];
 
+    const teamTierHasData =
+        teamRecs.length > 0 ||
+        (result.team_warnings?.length ?? 0) > 0 ||
+        (result.team_disputed?.length ?? 0) > 0 ||
+        (result.team_episodes?.length ?? 0) > 0 ||
+        (result.team_failed_approaches?.length ?? 0) > 0;
+
+    // VERIFIED personal keys have no team hive — render a single public
+    // section instead of a misleading empty "team" tier. Unverified-personal
+    // keeps the two-tier layout: its empty-team message already hedges
+    // correctly, and stale stored metadata must not change the output shape.
+    // If the backend DID return team data, the local scope belief is stale:
+    // fall through to the two-tier layout, because response data is ground truth.
+    const tenancy = getTenancy();
+    if (tenancy.state === "personal" && tenancy.verified && !teamTierHasData) {
+        return formatPublicOnly(result, publicRecs, scope);
+    }
+
     sections.push("# bhived Results — Team + Public (separated)\n");
-    sections.push(`${tenancyBanner("read")}\n`);
+    if (tenancy.state === "personal" && teamTierHasData) {
+        // Contradiction between local belief and response data — flag it
+        // instead of printing a "no private team tier" banner above team results.
+        sections.push(
+            "> ⚠️ **Scope mismatch:** local metadata says this is a personal key, but the backend returned " +
+            "team-private results — the response is ground truth, so treat this key as team-provisioned. " +
+            "Re-check `bhived://status` (re-verifies via `GET /v1/subscription`).\n"
+        );
+    } else {
+        sections.push(`${tenancyBanner("read")}\n`);
+    }
 
     // A tier the caller excluded via `scope` is empty BY DESIGN — never diagnose
     // that as "hive has nothing" or "a channel failed".
@@ -69,7 +97,8 @@ export function formatQueryResultV2(result: ReadResultV2, scope?: ReadScope): st
               "this is not a global fallback (public results are shown separately below)."
             : "*No team-private memories matched this query.* If you expected team results, either your team hive " +
               "has nothing on this topic yet, or your key is not provisioned as a team key (it would silently read " +
-              "public-only). This is not a global fallback — team and public are shown separately below.";
+              "public-only — check `bhived://status`, which re-verifies scope via `GET /v1/subscription`). " +
+              "This is not a global fallback — team and public are shown separately below.";
 
     const publicEmptyMsg =
         scope === "team_only"
@@ -102,6 +131,43 @@ export function formatQueryResultV2(result: ReadResultV2, scope?: ReadScope): st
             result.public_episodes ?? [],
             result.public_failed_approaches ?? [],
             publicEmptyMsg
+        )
+    );
+
+    sections.push(...renderQueryFooter(result.query_id));
+
+    return sections.join("\n");
+}
+
+/**
+ * Single-section layout for verified-personal keys: only the public brain
+ * exists for this key, so no team tier is rendered at all.
+ */
+function formatPublicOnly(result: ReadResultV2, publicRecs: QueryMemory[], scope?: ReadScope): string {
+    const sections: string[] = [];
+
+    sections.push("# bhived Results — Public Brain\n");
+    sections.push(`${tenancyBanner("read")}\n`);
+
+    if (scope === "team_only") {
+        sections.push(
+            "*Nothing was searched — this key is personal (no team hive) and the query was scoped to `team_only`. " +
+            "Retry with `scope` unset or `global_only`.*\n"
+        );
+        sections.push(...renderQueryFooter(result.query_id));
+        return sections.join("\n");
+    }
+
+    sections.push(`## 🌍 Shared Public Brain (${publicRecs.length} found)\n`);
+    sections.push(
+        ...renderTier(
+            publicRecs,
+            result.public_warnings ?? [],
+            result.public_disputed ?? [],
+            result.public_episodes ?? [],
+            result.public_failed_approaches ?? [],
+            "*No public memories matched this query.* This is unusual against the public brain — " +
+            "a retrieval channel may have failed; retry once before concluding nothing exists."
         )
     );
 

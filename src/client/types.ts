@@ -14,6 +14,17 @@ export interface HealthStatus {
     redis_connected: boolean;
 }
 
+// ─── Subscription ───────────────────────────────────────────────────
+
+/**
+ * GET /v1/subscription — the authoritative scope signal for the caller's API
+ * key (read from the X-API-Key header): `{"plan": "free" | "pro" | "team"}`.
+ * Typed loosely because callers must validate before trusting.
+ */
+export interface SubscriptionStatus {
+    plan?: string;
+}
+
 // ─── Query ──────────────────────────────────────────────────────────
 
 /**

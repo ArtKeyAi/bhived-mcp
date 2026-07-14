@@ -9,6 +9,8 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { config } from "./config.js";
+import { syncTenancyAtStartup } from "./scopeSync.js";
+import { getTenancy, verificationPhrase } from "./tenancy.js";
 
 // Tools — Core
 import { registerQueryTool } from "./tools/query.js";
@@ -48,8 +50,20 @@ import { registerReviewMemoryPrompt } from "./prompts/reviewMemory.js";
 // response, so agents get the usage protocol even when the host was
 // never configured with `bhived setup`. Compressed version of the
 // bhived Memory Protocol (packages/bhived/src/globalInstructions.ts).
+// Built AFTER the startup tenancy sync so the scope clause matches
+// what the key can actually do (GET /v1/subscription).
 
-const SERVER_INSTRUCTIONS = `bhived is shared memory for AI agents. Before solving specialized, unfamiliar, risky, or medium/hard tasks — and after 2 failed attempts, version/API uncertainty, or a user correction — call \`bhived_query\` instead of guessing. Put your most discriminative terms (exact error text, package names with versions) in \`query\`; put stack, constraints, and failed approaches as compact keyword phrases in \`context\`, never narrative prose. Save the returned \`query_id\`. Results come back as separate team and public sections. Verify each result actually matches your stack before applying it — scores are retrieval similarity, not verified correctness, and an empty Warnings section is NOT evidence an approach is safe. After a verified success or dead end, close the loop with \`bhived_write_instruction\` / \`bhived_write_mistake\` / \`bhived_write_update\`, passing the same \`query_id\` under the same API key. Keep writes under ~350 words, name concrete packages/versions, and quote errors verbatim. Read \`bhived://guide\` for details.`;
+function buildServerInstructions(): string {
+    const t = getTenancy();
+    const scopeClause =
+        t.state === "team"
+            ? `Your key is team-scoped (${verificationPhrase()}): results come back as separate team and public sections, and writes land in your team's private memory.`
+            : t.state === "personal"
+                ? `Your key is personal (plan: ${t.plan}, ${verificationPhrase()}): reads and writes use the global public brain only — there is no team tier, so never write anything confidential.`
+                : "Results come back as separate team and public sections when your key is team-provisioned (scope unverified this session — check bhived://status).";
+
+    return `bhived is shared memory for AI agents. Before solving specialized, unfamiliar, risky, or medium/hard tasks — and after 2 failed attempts, version/API uncertainty, or a user correction — call \`bhived_query\` instead of guessing. Put your most discriminative terms (exact error text, package names with versions) in \`query\`; put stack, constraints, and failed approaches as compact keyword phrases in \`context\`, never narrative prose. Save the returned \`query_id\`. ${scopeClause} Verify each result actually matches your stack before applying it — scores are retrieval similarity, not verified correctness, and an empty Warnings section is NOT evidence an approach is safe. After a verified success or dead end, close the loop with \`bhived_write_instruction\` / \`bhived_write_mistake\` / \`bhived_write_update\`, passing the same \`query_id\` under the same API key. Keep writes under ~350 words, name concrete packages/versions, and quote errors verbatim. Read \`bhived://guide\` for details.`;
+}
 
 // ── Server factory ───────────────────────────────────────────────
 // Creates a fully-configured McpServer instance.
@@ -59,9 +73,9 @@ function createServer(): McpServer {
     const server = new McpServer(
         {
             name: "bhived-mcp",
-            version: "1.2.0",
+            version: "1.3.0",
         },
-        { instructions: SERVER_INSTRUCTIONS }
+        { instructions: buildServerInstructions() }
     );
 
     // ── Register tools — Core ────────────────────────────────────
@@ -251,7 +265,25 @@ function buildCapabilitiesOverview(): string {
 
 // ── Transport ────────────────────────────────────────────────────
 
+// Cap the startup scope check so an unreachable backend never stalls server
+// startup. The sync keeps running in the background if slow — banners and
+// formatters read tenancy per call, so late results still take effect.
+const TENANCY_SYNC_CAP_MS = 5000;
+
+async function syncTenancyWithCap(): Promise<void> {
+    await Promise.race([
+        syncTenancyAtStartup().catch(() => { }),
+        new Promise<void>((resolve) => {
+            const timer = setTimeout(resolve, TENANCY_SYNC_CAP_MS);
+            timer.unref();
+        }),
+    ]);
+}
+
 async function runStdio(): Promise<void> {
+    // Verify the key's real scope (GET /v1/subscription) BEFORE registering
+    // tools, so tool descriptions and server instructions match it.
+    await syncTenancyWithCap();
     const server = createServer();
     const transport = new StdioServerTransport();
     await server.connect(transport);
@@ -273,6 +305,10 @@ async function runStdio(): Promise<void> {
 }
 
 async function runHttp(): Promise<void> {
+    // Verify the key's real scope before serving; per-request createServer()
+    // picks up any later tenancy changes automatically.
+    await syncTenancyWithCap();
+
     // Dynamic import to avoid loading express when using stdio
     const { default: express } = await import("express");
     const { StreamableHTTPServerTransport } = await import(

@@ -16,6 +16,7 @@ import { z } from "zod/v4";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { restClient } from "../client/restClient.js";
 import { formatQueryResultV2 } from "../formatters/queryFormatter.js";
+import { getTenancy, verificationPhrase } from "../tenancy.js";
 
 const QueryInputSchema = z.object({
     query: z
@@ -72,7 +73,36 @@ const QueryInputSchema = z.object({
 
 type QueryInput = z.infer<typeof QueryInputSchema>;
 
-const QUERY_DESCRIPTION = `Search bhived shared memory before solving specialized, unfamiliar,
+/**
+ * Built at registration time, AFTER the startup tenancy sync, so the results
+ * paragraph describes the response structure this key actually produces.
+ */
+function buildQueryDescription(): string {
+    const t = getTenancy();
+    const resultsParagraph =
+        t.state === "personal" && t.verified
+            ? `Your key is personal (plan: ${t.plan}, ${verificationPhrase()}):
+results come from the shared public brain as a SINGLE section — this key has
+no private team tier, and 'scope: team_only' returns nothing. Leave 'scope'
+unset.`
+            : t.state === "personal"
+                ? `Your key appears personal (plan: ${t.plan}, ${verificationPhrase()}):
+results likely come from the shared public brain only. Because this is
+unverified, results keep the two-section team + public layout with honest
+empty-tier notes. Leave 'scope' unset.`
+                : t.state === "team"
+                ? `Your key is team-scoped (${verificationPhrase()}): results are
+returned as TWO sections — your team's private memory and the shared public
+brain — so you can tell proprietary team knowledge from public knowledge.
+Leave 'scope' unset for normal work (you want both); narrow with team_only /
+global_only only when one tier is explicitly required.`
+                : `Results are returned as TWO sections — your team's private memory and the
+shared public brain — when your key is team-provisioned (scope could not be
+verified this session; check bhived://status). Leave 'scope' unset for normal
+work; narrow with team_only / global_only only when one tier is explicitly
+required.`;
+
+    return `Search bhived shared memory before solving specialized, unfamiliar,
 risky, or medium/hard tasks. Returns proven instructions, known pitfalls,
 alternative approaches, warnings, skills, and MCPs from similar work.
 Also use after 2 failed attempts, version/API uncertainty, confusing errors,
@@ -82,10 +112,7 @@ Make the query specific: exact error text, package names with versions, and
 your goal. Put stack, constraints, and failed approaches in 'context' as
 compact keyword phrases.
 
-Results are returned as TWO sections — your team's private memory and the
-shared public brain — so you can tell proprietary team knowledge from public
-knowledge. Leave 'scope' unset for normal work (you want both); narrow with
-team_only / global_only only when one tier is explicitly required.
+${resultsParagraph}
 
 Treat results as leads, not verified truth: check each result actually matches
 your stack/versions before applying it, and treat weak or off-stack matches as
@@ -97,13 +124,14 @@ write back only for verified useful learning or correct user corrections.
 Include query_id in that write to close the feedback loop. Use the SAME key
 for the query and the follow-up write — a query_id from a different tenant is
 not linked.`;
+}
 
 export function registerQueryTool(server: McpServer): void {
     server.registerTool(
         "bhived_query",
         {
             title: "Search the Hive",
-            description: QUERY_DESCRIPTION,
+            description: buildQueryDescription(),
             inputSchema: QueryInputSchema,
             annotations: {
                 readOnlyHint: true,

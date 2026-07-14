@@ -1,9 +1,28 @@
 {
   "name": "bhived",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Open-source Bhived setup CLI for browser authentication and MCP client installation.",
   "type": "module",
   "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./global-instructions": {
+      "types": "./dist/globalInstructions.d.ts",
+      "default": "./dist/globalInstructions.js"
+    },
+    "./install-global-instructions": {
+      "types": "./dist/installGlobalInstructions.d.ts",
+      "default": "./dist/installGlobalInstructions.js"
+    },
+    "./agent-configs": {
+      "types": "./dist/agentConfigs.d.ts",
+      "default": "./dist/agentConfigs.js"
+    },
+    "./subscription": {
+      "types": "./dist/subscription.d.ts",
+      "default": "./dist/subscription.js"
+    }
+  },
   "bin": {
     "bhived": "dist/index.js"
   },
@@ -16,7 +35,9 @@
   "scripts": {
     "clean": "rimraf dist",
     "build": "tsc",
-    "dev": "tsx src/index.ts"
+    "dev": "tsx src/index.ts",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run clean && npm run build"
   },
   "dependencies": {
     "jsonc-parser": "^3.3.1",

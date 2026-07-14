@@ -14,6 +14,7 @@ import type {
     WriteResult,
     MemoryDetail,
     HealthStatus,
+    SubscriptionStatus,
     MemoryListParams,
     MemoryListResult,
     ActivationResponse,
@@ -53,6 +54,15 @@ export class BhivedRestClient {
 
     async getHealth(): Promise<HealthStatus> {
         return this.get<HealthStatus>("/health");
+    }
+
+    /**
+     * GET /v1/subscription — the caller's live plan, derived server-side from
+     * the X-API-Key header. The authoritative signal for team vs personal
+     * scope; callers must validate `plan` before trusting it.
+     */
+    async getSubscription(): Promise<SubscriptionStatus> {
+        return this.get<SubscriptionStatus>("/v1/subscription");
     }
 
     async listMemories(params?: MemoryListParams): Promise<MemoryListResult> {

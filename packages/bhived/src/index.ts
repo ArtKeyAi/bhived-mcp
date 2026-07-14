@@ -18,12 +18,16 @@ import {
   getConfigPath,
   maskApiKey,
   readStoredConfig,
+  updateStoredPlan,
+  type StoredBhivedConfig,
 } from "./configFile.js";
+import type { InstructionScope } from "./globalInstructions.js";
 import { detectAgentInstall, installAgentConfig } from "./installAgentConfigs.js";
 import {
   installGlobalInstruction,
   refreshOutdatedInstructions,
 } from "./installGlobalInstructions.js";
+import { fetchSubscriptionPlan, planToScope, scopeFromStored } from "./subscription.js";
 
 const command = process.argv[2] ?? "help";
 
@@ -66,21 +70,77 @@ try {
   process.exit(1);
 }
 
-async function runAuth(): Promise<void> {
+async function runAuth(): Promise<ResolvedScope> {
   const config = await authenticateWithBrowser({ packageVersion: await getPackageVersion() });
   console.log(`Authenticated${config.user?.email ? ` as ${config.user.email}` : ""}.`);
   console.log(`Saved Bhived credentials to ${getConfigPath()}.`);
   console.log(`API key: ${maskApiKey(config.apiKey)}`);
-  printScope(config.plan, config.team);
+  const resolved = await resolveScope(config);
+  printScope(resolved);
+  return resolved;
 }
 
-function printScope(plan?: string, team?: { id: string; name?: string }): void {
-  if (team?.id) {
-    console.log(`Scope: team "${team.name ?? team.id}" — reads team+public, writes team-private.`);
-  } else if (plan) {
-    console.log(`Scope: personal (plan: ${plan}) — reads/writes the global public brain.`);
+interface ResolvedScope {
+  scope: InstructionScope;
+  plan?: string;
+  team?: { id: string; name?: string };
+  /** True when the scope came from a live GET /v1/subscription call. */
+  verified: boolean;
+}
+
+/**
+ * Resolve the key's real scope: live `GET /v1/subscription` first, stored
+ * sign-in metadata as fallback. A live result is persisted to config.json
+ * (best-effort — a read-only file must not break the command). Either way,
+ * a known scope is re-stamped into existing agent instruction files so their
+ * bhived block matches the key in use — critical after `bhived auth` switched
+ * accounts while the live check was unavailable.
+ */
+async function resolveScope(stored: StoredBhivedConfig): Promise<ResolvedScope> {
+  const livePlan = await fetchSubscriptionPlan(stored.apiUrl, stored.apiKey);
+  if (livePlan) {
+    const scope = planToScope(livePlan);
+    await updateStoredPlan(livePlan).catch(() => {
+      // Best-effort: the verified scope is still reported and re-persisted next run.
+    });
+    await refreshInstructionsWithScope(scope);
+    return {
+      scope,
+      plan: livePlan,
+      team: livePlan === "team" ? stored.team : undefined,
+      verified: true,
+    };
+  }
+  const scope = scopeFromStored(stored);
+  if (scope !== "unknown") {
+    await refreshInstructionsWithScope(scope);
+  }
+  return { scope, plan: stored.plan, team: stored.team, verified: false };
+}
+
+/** Best-effort re-stamp of existing instruction files with a KNOWN scope. */
+async function refreshInstructionsWithScope(scope: InstructionScope): Promise<void> {
+  try {
+    const updated = await refreshOutdatedInstructions(detectPlatform(), scope);
+    for (const result of updated) {
+      console.log(`[bhived] Updated global instructions for ${result.label}: ${result.message}`);
+    }
+  } catch {
+    // Best-effort — never block a command on instruction refresh.
+  }
+}
+
+function printScope(resolved: ResolvedScope): void {
+  const via = resolved.verified
+    ? "verified via GET /v1/subscription"
+    : "from sign-in metadata; the live scope check did not succeed";
+  if (resolved.scope === "team") {
+    const teamName = resolved.team?.name ?? resolved.team?.id;
+    console.log(`Scope: team${teamName ? ` "${teamName}"` : ""} — reads team+public, writes team-private (${via}).`);
+  } else if (resolved.scope === "personal") {
+    console.log(`Scope: personal (plan: ${resolved.plan ?? "unknown"}) — reads/writes the global public brain (${via}).`);
   } else {
-    console.log("Scope: personal (public brain). For team isolation, your key must be provisioned as a team key.");
+    console.log("Scope: unknown — the live scope check (GET /v1/subscription) did not succeed and no scope metadata is stored. It will be verified on the next successful connection.");
   }
 }
 
@@ -104,16 +164,25 @@ async function runSetup(): Promise<void> {
   console.log("Bhived setup");
   console.log(`Platform: ${platform}${flags.has("platform") ? " (overridden)" : " (auto-detected)"}`);
 
+  let resolved: ResolvedScope;
   if (existing) {
     console.log(`Auth: already signed in${existing.user?.email ? ` as ${existing.user.email}` : ""}`);
     console.log(`Credentials: ${getConfigPath()} (${maskApiKey(existing.apiKey)})`);
+    resolved = await resolveScope(existing);
+    printScope(resolved);
   } else {
     console.log("Auth: browser sign-in required");
-    await runAuth();
+    resolved = await runAuth();
   }
 
   console.log("");
-  await installAgentConfigs(selectedAgents, platform, detectInstalledOnly, { writeMcp, writeInstructions });
+  await installAgentConfigs(selectedAgents, platform, detectInstalledOnly, {
+    writeMcp,
+    writeInstructions,
+    // Stamp instruction files with the verified scope only; "unknown" would
+    // overwrite a previously-verified scope with weaker conditional copy.
+    scope: resolved.scope === "unknown" ? undefined : resolved.scope,
+  });
 }
 
 async function runStatus(): Promise<void> {
@@ -129,11 +198,13 @@ async function runStatus(): Promise<void> {
   if (config.user?.email) console.log(`User: ${config.user.email}`);
   console.log(`API URL: ${config.apiUrl}`);
   console.log(`API key: ${maskApiKey(config.apiKey)}`);
-  if (config.team?.id) {
-    console.log(`Team: ${config.team.name ?? "(unnamed)"} (${config.team.id})`);
+
+  const resolved = await resolveScope(config);
+  if (resolved.scope === "team" && resolved.team?.id) {
+    console.log(`Team: ${resolved.team.name ?? "(unnamed)"} (${resolved.team.id})`);
   }
-  if (config.plan) console.log(`Plan: ${config.plan}`);
-  printScope(config.plan, config.team);
+  if (resolved.plan) console.log(`Plan: ${resolved.plan}`);
+  printScope(resolved);
   console.log(`Config: ${getConfigPath()}`);
 }
 
@@ -195,6 +266,8 @@ Environment:
 interface InstallOptions {
   writeMcp: boolean;
   writeInstructions: boolean;
+  /** Verified key scope to stamp into instruction blocks; omit when unknown. */
+  scope?: InstructionScope;
 }
 
 async function installAgentConfigs(
@@ -256,7 +329,7 @@ async function installAgentConfigs(
     }
 
     if (options.writeInstructions) {
-      const instr = await installGlobalInstruction(agentId, platform, { create: true });
+      const instr = await installGlobalInstruction(agentId, platform, { create: true, scope: options.scope });
       switch (instr.status) {
         case "written":
           instructionsChanged++;
@@ -281,7 +354,7 @@ async function installAgentConfigs(
   // Universal cross-tool file (~/.agents/AGENTS.md). Written once per run when
   // instructions are enabled, unless detect-mode surfaced no agents at all.
   if (options.writeInstructions && (!detectInstalledOnly || configuredLabels.size > 0)) {
-    const universal = await installGlobalInstruction("universal", platform, { create: true });
+    const universal = await installGlobalInstruction("universal", platform, { create: true, scope: options.scope });
     switch (universal.status) {
       case "written":
         instructionsChanged++;
@@ -329,7 +402,14 @@ async function installAgentConfigs(
 async function refreshInstructionsQuietly(): Promise<void> {
   try {
     const platform: TargetPlatform = detectPlatform();
-    const updated = await refreshOutdatedInstructions(platform);
+    // Offline scope from the stored config (no network per command) — the
+    // stored plan is kept fresh by resolveScope() on auth/status/setup and by
+    // the MCP server's startup sync. "unknown" preserves the stamped scope.
+    const storedScope = scopeFromStored(await readStoredConfig());
+    const updated = await refreshOutdatedInstructions(
+      platform,
+      storedScope === "unknown" ? undefined : storedScope
+    );
     for (const result of updated) {
       console.log(`[bhived] Updated global instructions for ${result.label}: ${result.message}`);
     }

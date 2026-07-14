@@ -15,8 +15,23 @@ rmSync(buildDir, { recursive: true, force: true });
 mkdirSync(buildDir, { recursive: true });
 
 cpSync(join(root, "dist"), join(buildDir, "dist"), { recursive: true });
+cpSync(join(root, "assets"), join(buildDir, "assets"), { recursive: true });
 cpSync(join(root, "README.md"), join(buildDir, "README.md"));
 cpSync(join(root, "LICENSE"), join(buildDir, "LICENSE"));
+
+// Stage the workspace `bhived` CLI as a tarball so the bundle installs the
+// EXACT local build instead of resolving from the registry — the registry may
+// not have this version yet (publish ordering) or may lag behind local fixes.
+const bhivedPkg = JSON.parse(readFileSync(join(root, "packages", "bhived", "package.json"), "utf8"));
+execFileSync("npm", ["pack", "--pack-destination", buildDir], {
+    cwd: join(root, "packages", "bhived"),
+    stdio: "inherit",
+    shell: process.platform === "win32",
+});
+const bhivedTarball = `bhived-${bhivedPkg.version}.tgz`;
+if (!existsSync(join(buildDir, bhivedTarball))) {
+    throw new Error(`npm pack did not produce ${bhivedTarball} in ${buildDir}.`);
+}
 
 const runtimePackage = {
     name: pkg.name,
@@ -24,7 +39,7 @@ const runtimePackage = {
     description: pkg.description,
     type: pkg.type,
     main: pkg.main,
-    dependencies: pkg.dependencies,
+    dependencies: { ...pkg.dependencies, bhived: `file:./${bhivedTarball}` },
     engines: pkg.engines,
     license: pkg.license,
 };

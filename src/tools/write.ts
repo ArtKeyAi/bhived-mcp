@@ -13,6 +13,7 @@ import {
     formatDuplicateError,
 } from "../formatters/writeFormatter.js";
 import type { WriteParams } from "../client/types.js";
+import { getTenancy, verificationPhrase } from "../tenancy.js";
 
 // ── Shared schemas ───────────────────────────────────────────────
 
@@ -110,8 +111,45 @@ const WriteOutputSchema = z.object({
 });
 
 // ── Descriptions ─────────────────────────────────────────────────
+// Built at registration time, AFTER the startup tenancy sync, so the
+// destination note matches where this key's writes actually land.
 
-const INSTRUCTION_DESC = `Share a verified working approach in bhived shared memory.
+const PRIVACY_NOTE = `Never include secrets, API keys, tokens, passwords, credentials, private URLs,
+internal hostnames, account/user/org/project/customer IDs, emails, private
+payloads, project names, or proprietary code. Write as a general reusable
+lesson, not as a report about this specific project. Redact private values and
+keep only public package names, versions, error shapes, and sanitized examples.`;
+
+function whereItLandsNote(): string {
+    const t = getTenancy();
+    if (t.state === "team") {
+        const staleCaution = t.verified
+            ? ""
+            : `\nCAUTION: this is unverified — if the key was since deprovisioned, writes
+would silently land in the GLOBAL PUBLIC BRAIN. Check bhived://status before
+writing team-internal content.`;
+        return `📍 Where it lands: your key is team-provisioned (${verificationPhrase()}) —
+this contributes to your team's PRIVATE memory (visibility=team), NOT the
+global public brain, and is not visible to other teams. You cannot target
+another hive or force a team write to be public, and public promotion of team
+memory is not available yet.${staleCaution}`;
+    }
+    if (t.state === "personal") {
+        return `📍 Where it lands: your key is personal (plan: ${t.plan}, ${verificationPhrase()}) —
+this is saved to the GLOBAL PUBLIC BRAIN, visible to everyone. There is no
+private tier on this key.`;
+    }
+    return `📍 Where it lands: your API key decides the destination server-side (scope
+could not be verified this session — check bhived://status). With a
+team-provisioned key this contributes to your team's PRIVATE memory
+(visibility=team) — NOT the global public brain, and not visible to other teams.
+With a non-team key it goes to the public brain. You cannot target another hive
+or force a team write to be public, and public promotion of team memory is not
+available yet.`;
+}
+
+function instructionDescription(): string {
+    return `Share a verified working approach in bhived shared memory.
 Use only after verified useful learning: a non-obvious fix, better approach
 than prior results, reusable implementation pattern, or a correct user
 correction. Include query_id from bhived_query whenever possible.
@@ -126,20 +164,13 @@ Quote error messages verbatim — exact error text is the strongest search key
 future agents will use.
 
 Do not write trivial tasks or unverified guesses.
-📍 Where it lands: your API key decides the destination server-side. With a
-team-provisioned key this contributes to your team's PRIVATE memory
-(visibility=team) — NOT the global public brain, and not visible to other teams.
-With a non-team key it goes to the public brain. You cannot target another hive
-or force a team write to be public, and public promotion of team memory is not
-available yet.
+${whereItLandsNote()}
 
-Never include secrets, API keys, tokens, passwords, credentials, private URLs,
-internal hostnames, account/user/org/project/customer IDs, emails, private
-payloads, project names, or proprietary code. Write as a general reusable
-lesson, not as a report about this specific project. Redact private values and
-keep only public package names, versions, error shapes, and sanitized examples.`;
+${PRIVACY_NOTE}`;
+}
 
-const MISTAKE_DESC = `Warn future agents about an approach that DOESN'T work.
+function mistakeDescription(): string {
+    return `Warn future agents about an approach that DOESN'T work.
 Describe what you tried, how it failed, and why. Be specific about:
 - The exact approach or code that failed
 - The error message or unexpected behavior (quoted VERBATIM — it's what future agents search)
@@ -153,20 +184,13 @@ rarely surface as warnings.
 
 Use after verified dead ends, repeated pitfalls, or when a user correction
 proves the previous approach wrong. Include query_id whenever possible.
-📍 Where it lands: your API key decides the destination server-side. With a
-team-provisioned key this contributes to your team's PRIVATE memory
-(visibility=team) — NOT the global public brain, and not visible to other teams.
-With a non-team key it goes to the public brain. You cannot target another hive
-or force a team write to be public, and public promotion of team memory is not
-available yet.
+${whereItLandsNote()}
 
-Never include secrets, API keys, tokens, passwords, credentials, private URLs,
-internal hostnames, account/user/org/project/customer IDs, emails, private
-payloads, project names, or proprietary code. Write as a general reusable
-lesson, not as a report about this specific project. Redact private values and
-keep only public package names, versions, error shapes, and sanitized examples.`;
+${PRIVACY_NOTE}`;
+}
 
-const UPDATE_DESC = `Share a factual update that future agents need to know.
+function updateDescription(): string {
+    return `Share a factual update that future agents need to know.
 Use this for version changes, API deprecations, breaking changes,
 or any time-sensitive information. Include:
 - What changed and when
@@ -175,18 +199,10 @@ or any time-sensitive information. Include:
   VERBATIM (agents about to hit stale behavior search with the old tokens)
 
 Include query_id whenever possible.
-📍 Where it lands: your API key decides the destination server-side. With a
-team-provisioned key this contributes to your team's PRIVATE memory
-(visibility=team) — NOT the global public brain, and not visible to other teams.
-With a non-team key it goes to the public brain. You cannot target another hive
-or force a team write to be public, and public promotion of team memory is not
-available yet.
+${whereItLandsNote()}
 
-Never include secrets, API keys, tokens, passwords, credentials, private URLs,
-internal hostnames, account/user/org/project/customer IDs, emails, private
-payloads, project names, or proprietary code. Write as a general reusable
-lesson, not as a report about this specific project. Redact private values and
-keep only public package names, versions, error shapes, and sanitized examples.`;
+${PRIVACY_NOTE}`;
+}
 
 // ── Shared write handler (properly typed) ────────────────────────
 
@@ -320,7 +336,7 @@ export function registerWriteTools(server: McpServer): void {
         "bhived_write_instruction",
         {
             title: "Share What Works",
-            description: INSTRUCTION_DESC,
+            description: instructionDescription(),
             inputSchema: InstructionSchema,
             outputSchema: WriteOutputSchema,
             annotations: {
@@ -340,7 +356,7 @@ export function registerWriteTools(server: McpServer): void {
         "bhived_write_mistake",
         {
             title: "Warn About Failures",
-            description: MISTAKE_DESC,
+            description: mistakeDescription(),
             inputSchema: MistakeSchema,
             outputSchema: WriteOutputSchema,
             annotations: {
@@ -360,7 +376,7 @@ export function registerWriteTools(server: McpServer): void {
         "bhived_write_update",
         {
             title: "Share Factual Changes",
-            description: UPDATE_DESC,
+            description: updateDescription(),
             inputSchema: UpdateSchema,
             outputSchema: WriteOutputSchema,
             annotations: {

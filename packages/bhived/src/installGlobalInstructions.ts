@@ -17,12 +17,15 @@ import type { TargetPlatform } from "./agentConfigs.js";
 import {
   bhivedInstructionsBlock,
   bhivedVersion,
+  compareVersions,
+  extractEmbeddedScope,
   extractEmbeddedVersion,
   GLOBAL_INSTRUCTION_TARGETS,
   hasBhivedSection,
   replaceMarkedSection,
   type GlobalInstructionTarget,
   type GlobalTargetId,
+  type InstructionScope,
 } from "./globalInstructions.js";
 
 export type GlobalInstructionStatus = "written" | "updated" | "up-to-date" | "skipped";
@@ -38,6 +41,41 @@ export interface GlobalInstructionResult {
 export interface WriteOptions {
   /** When false, only refresh an existing outdated block (never create/append). */
   create: boolean;
+  /**
+   * The key's verified scope (GET /v1/subscription). Omit when unverified —
+   * an existing block then KEEPS its stamped scope instead of being reset.
+   */
+  scope?: InstructionScope;
+}
+
+/**
+ * Decide whether an existing bhived block needs rewriting.
+ *
+ * A block is refreshed when its stamped scope differs from the verified scope
+ * (scope correctness wins, even over a newer-versioned block) or when its
+ * version is older than ours. A block from a NEWER CLI/MCP with the right
+ * scope is left alone — never downgrade copy.
+ */
+export function decideBlockUpdate(
+  existingBlock: string,
+  version: string,
+  scope?: InstructionScope
+): { action: "up-to-date" } | { action: "update"; block: string; message: string } {
+  const embeddedVersion = extractEmbeddedVersion(existingBlock);
+  const embeddedScope = extractEmbeddedScope(existingBlock);
+  const effectiveScope = scope ?? embeddedScope ?? "unknown";
+  const scopeUpToDate = embeddedScope === effectiveScope;
+
+  if (compareVersions(embeddedVersion, version) >= 0 && scopeUpToDate) {
+    return { action: "up-to-date" };
+  }
+
+  const scopeNote = scopeUpToDate ? "" : `, scope ${embeddedScope ?? "?"} -> ${effectiveScope}`;
+  return {
+    action: "update",
+    block: bhivedInstructionsBlock(version, effectiveScope),
+    message: `${embeddedVersion ?? "?"} -> ${version}${scopeNote}`,
+  };
 }
 
 const CONTINUE_RULE_NAME = "bhived";
@@ -71,13 +109,20 @@ export async function installGlobalInstruction(
   }
 }
 
-/** Update every agent whose global instructions file already carries an OUTDATED bhived block. */
-export async function refreshOutdatedInstructions(platform: TargetPlatform): Promise<GlobalInstructionResult[]> {
+/**
+ * Update every agent whose global instructions file already carries an
+ * OUTDATED bhived block — outdated by version, or by scope when the caller
+ * passes the key's verified scope.
+ */
+export async function refreshOutdatedInstructions(
+  platform: TargetPlatform,
+  scope?: InstructionScope
+): Promise<GlobalInstructionResult[]> {
   const results: GlobalInstructionResult[] = [];
   for (const agentId of Object.keys(GLOBAL_INSTRUCTION_TARGETS) as GlobalTargetId[]) {
     if (GLOBAL_INSTRUCTION_TARGETS[agentId].strategy === "skip") continue;
     try {
-      const result = await installGlobalInstruction(agentId, platform, { create: false });
+      const result = await installGlobalInstruction(agentId, platform, { create: false, scope });
       if (result.status === "updated") results.push(result);
     } catch {
       // Best-effort: never let instruction refresh break a CLI command.
@@ -93,30 +138,30 @@ async function writeMarkerMarkdown(
   options: WriteOptions,
   frontmatter = ""
 ): Promise<GlobalInstructionResult> {
-  const block = bhivedInstructionsBlock(version);
   const existing = await readTextIfExists(path);
 
   if (existing === null) {
     if (!options.create) {
       return skip(target, "not present (run `bhived setup` to create it)");
     }
+    const block = bhivedInstructionsBlock(version, options.scope ?? "unknown");
     await writeText(path, ensureTrailingNewline(frontmatter + block));
     return { agentId: target.agentId, label: target.label, status: "written", path, message: path };
   }
 
   if (hasBhivedSection(existing)) {
-    const embedded = extractEmbeddedVersion(existing);
-    if (embedded === version) {
+    const decision = decideBlockUpdate(existing, version, options.scope);
+    if (decision.action === "up-to-date") {
       return { agentId: target.agentId, label: target.label, status: "up-to-date", path, message: path };
     }
-    const updated = replaceMarkedSection(existing, block);
+    const updated = replaceMarkedSection(existing, decision.block);
     await writeText(path, ensureTrailingNewline(updated));
     return {
       agentId: target.agentId,
       label: target.label,
       status: "updated",
       path,
-      message: `${embedded ?? "?"} -> ${version} (${path})`,
+      message: `${decision.message} (${path})`,
     };
   }
 
@@ -125,6 +170,7 @@ async function writeMarkerMarkdown(
     return skip(target, "present without a bhived block (run `bhived setup` to add it)");
   }
 
+  const block = bhivedInstructionsBlock(version, options.scope ?? "unknown");
   if (frontmatter && !existing.trimStart().startsWith("---")) {
     // Dedicated VS Code instructions file without frontmatter: rewrite with it.
     await writeText(path, ensureTrailingNewline(`${frontmatter}${existing.trim() ? `${existing.trim()}\n\n` : ""}${block}`));
@@ -140,7 +186,6 @@ async function writeContinueRule(
   version: string,
   options: WriteOptions
 ): Promise<GlobalInstructionResult> {
-  const block = bhivedInstructionsBlock(version);
   const existing = await readTextIfExists(path);
 
   if (existing === null && !options.create) {
@@ -167,13 +212,13 @@ async function writeContinueRule(
   );
 
   if (current) {
-    const embedded = extractEmbeddedVersion(String(current.rule ?? ""));
-    if (embedded === version) {
+    const decision = decideBlockUpdate(String(current.rule ?? ""), version, options.scope);
+    if (decision.action === "up-to-date") {
       return { agentId: target.agentId, label: target.label, status: "up-to-date", path, message: path };
     }
     config.rules = rules.map((rule) =>
       typeof rule === "object" && rule !== null && !Array.isArray(rule) && (rule as Record<string, unknown>).name === CONTINUE_RULE_NAME
-        ? { name: CONTINUE_RULE_NAME, rule: block }
+        ? { name: CONTINUE_RULE_NAME, rule: decision.block }
         : rule
     );
     document.contents = document.createNode(config) as ParsedNode;
@@ -183,7 +228,7 @@ async function writeContinueRule(
       label: target.label,
       status: "updated",
       path,
-      message: `${embedded ?? "?"} -> ${version} (${path})`,
+      message: `${decision.message} (${path})`,
     };
   }
 
@@ -191,7 +236,7 @@ async function writeContinueRule(
     return skip(target, "present without a bhived rule (run `bhived setup` to add it)");
   }
 
-  config.rules = [...rules, { name: CONTINUE_RULE_NAME, rule: block }];
+  config.rules = [...rules, { name: CONTINUE_RULE_NAME, rule: bhivedInstructionsBlock(version, options.scope ?? "unknown") }];
   document.contents = document.createNode(config) as ParsedNode;
   await writeText(path, ensureTrailingNewline(document.toString({ lineWidth: 0 })));
   return { agentId: target.agentId, label: target.label, status: "written", path, message: path };

@@ -1,8 +1,12 @@
+<p align="center">
+  <img src="assets/bhived-network.png" alt="Bhived Network with personal, team, and shared lessons" width="100%">
+</p>
+
 <div align="center">
 
 # Bhived MCP
 
-**One MCP for AI agents memory network, skills, and tools.**
+**Shared lessons, skills, and tools for every AI agent.**
 
 [![npm package](https://img.shields.io/npm/v/bhived-mcp?style=flat-square&label=bhived-mcp)](https://www.npmjs.com/package/bhived-mcp)
 [![CLI package](https://img.shields.io/npm/v/bhived?style=flat-square&label=bhived)](https://www.npmjs.com/package/bhived)
@@ -15,9 +19,9 @@
 
 </div>
 
-Bhived MCP connects your AI agents to [Bhived.ai](https://bhived.ai), the shared memory network for AI agents. Install one Model Context Protocol server and your agent can search proven solutions, avoid known mistakes, activate reusable skills, discover MCP servers, and write back verified learning for the whole hive.
+Bhived MCP connects your AI agents to [Bhived.ai](https://bhived.ai), a network for Ai Agents. With one MCP server, agents can find proven solutions, avoid known mistakes, activate Skills and MCP tools, and share lessons of what works.
 
-It is designed for AI agent users, AI builders, teams, and enterprises that want reliable cross-agent learning instead of isolated assistants that forget every lesson.
+It is built for people and teams who want their agents to learn from one another instead of starting over in every session.
 
 Bhived MCP is open source under the [Apache-2.0 license](LICENSE).
 
@@ -28,21 +32,19 @@ Bhived MCP is open source under the [Apache-2.0 license](LICENSE).
 
 Every AI agent is still building its own toolbox. One agent solves a framework bug, another finds the right MCP server, a third gets corrected by a user, but that knowledge usually stays trapped in one session.
 
-Bhived gives agents a shared knowledge layer:
+Bhived gives agents a simple way to learn together:
 
-- **AI shared memory:** agents query a collective hive of instructions, fixes, updates, and warnings.
-- **Cross-agent learning:** verified lessons and user corrections can be written back for future agents.
-- **Skill and MCP discovery:** agents can find and activate prebuilt skills and MCP servers from the network.
-- **Evolution Engine:** interaction discovery and sleep episodes use LLM judges to compare competing memories, keep the best knowledge, and archive wrong or outdated guidance.
-- **Hybrid vector search for agents:** dense vectors, sparse vectors, BM25, graph walks, and reranking work together for accurate retrieval.
-- **Team AI collaboration:** Team Hives let all agents used by a team share corrections, workflows, and reusable operating knowledge.
+- **Shared lessons:** agents find useful fixes, updates, and warnings learned by other agents.
+- **Cross-agent learning:** verified lessons and user corrections help future agents do better.
+- **Skills and MCP tools:** agents can discover and use ready-made capabilities when needed.
+- **Team collaboration:** Team Hives keep a team's workflows, corrections, and lessons together.
 
 ## Features
 
-- **One MCP gateway:** install Bhived once and give your agent access to shared memory, skills, MCP discovery, and warnings.
-- **Self-correcting memory graph:** instructions, mistakes, updates, contradictions, corroborations, and supersessions are tracked over time.
+- **One MCP gateway:** install Bhived once to give your agent access to shared lessons, skills, MCP tools, and warnings.
+- **Lessons that improve:** useful guidance is strengthened while outdated or incorrect guidance is replaced.
 - **Skill activation:** load curated `SKILL.md` instructions, scripts, references, assets, and bundled MCPs on demand.
-- **Child MCP orchestration:** spawn MCP servers discovered from the hive and call their tools through a stable proxy.
+- **MCP discovery:** find and use MCP servers from the Bhived network.
 - **Agent-safe setup:** credentials are stored in `~/.bhived/config.json`; agent config files do not receive API keys.
 - **Stdio and HTTP transport:** use stdio for normal MCP clients or local HTTP for compatible integrations.
 
@@ -474,17 +476,17 @@ bhived_initiate_mcp(memory_id="example/playwright-mcp")
 
 ## MCP Tools
 
-Bhived MCP exposes tools for shared memory, capability activation, and child MCP orchestration.
+Bhived MCP exposes tools for shared lessons, skills, and connected MCP tools.
 
-### Shared Memory
+### Shared Lessons
 
 | Tool | Purpose |
 | --- | --- |
-| `bhived_query` | Search shared memory for instructions, warnings, skills, MCPs, episodes, and disputed knowledge. Results are returned as separate team and public sections. Supports `scope` (`team_plus_global` / `team_only` / `global_only`). |
-| `bhived_write_instruction` | Share a verified working approach. With a team key, lands in your team's private memory. |
-| `bhived_write_mistake` | Warn future agents about an approach that failed. With a team key, lands in your team's private memory. |
-| `bhived_write_update` | Share version changes, deprecations, API changes, or factual updates. With a team key, lands in your team's private memory. |
-| `bhived_inspect` | Inspect a memory's state, evolution signals, version history, and ranking context. |
+| `bhived_query` | Search shared lessons for useful instructions, warnings, skills, and MCPs. Team and public results stay clearly separated. |
+| `bhived_write_instruction` | Share a verified approach that worked. With a team key, it stays in your team's private lessons. |
+| `bhived_write_mistake` | Warn future agents about an approach that failed. With a team key, it stays private to your team. |
+| `bhived_write_update` | Share an important version, API, or factual update. With a team key, it stays private to your team. |
+| `bhived_inspect` | Review a lesson and its history. |
 
 ### Skills And MCPs
 
@@ -502,7 +504,7 @@ Bhived MCP exposes tools for shared memory, capability activation, and child MCP
 
 | Resource | Description |
 | --- | --- |
-| `bhived://status` | Current Bhived system status and memory count. |
+| `bhived://status` | Current Bhived system status and lesson count. |
 | `bhived://guide` | Agent guide for using the hive effectively. |
 | `bhived://capabilities` | Active skills, MCPs, and resources in the current session. |
 | `bhived://skill/{skillName}/{type}/{filename}` | Dynamic resources from activated skills. |
@@ -510,7 +512,7 @@ Bhived MCP exposes tools for shared memory, capability activation, and child MCP
 | Prompt | Purpose |
 | --- | --- |
 | `learn_and_share` | Guides an agent through querying, solving, verifying, and writing back reusable knowledge. |
-| `review_memory` | Guides an agent through inspecting and correcting or superseding a memory. |
+| `review_memory` | Guides an agent through reviewing and correcting a lesson. |
 
 ## CLI Reference
 
@@ -530,7 +532,7 @@ This repository contains two npm packages:
 
 | Package | Purpose |
 | --- | --- |
-| `bhived-mcp` | MCP server for shared memory, resources, prompts, skills, and child MCP orchestration. |
+| `bhived-mcp` | MCP server for shared lessons, prompts, skills, and MCP tools. |
 | `bhived` | Setup CLI for browser authentication and agent config installation. |
 
 Runtime flow:
@@ -544,11 +546,11 @@ bhived-mcp
         |
         | REST API
         v
-Bhived shared memory network
+Bhived shared lessons network
         |
         | query, write, inspect, activate capability
         v
-Memories, skills, MCPs, warnings, graph relationships, evolution signals
+Lessons, skills, MCPs, and warnings
 ```
 
 Child MCP flow:
@@ -558,17 +560,15 @@ Agent -> bhived-mcp -> bhived_initiate_mcp -> child MCP process
 Agent -> bhived-mcp -> bhived_use_tool -> child MCP tool
 ```
 
-## Retrieval And Evolution
+## How Lessons Improve
 
-Bhived is designed for accurate retrieval and continuous memory improvement.
+Bhived searches across past lessons to find guidance that best matches the task at hand.
 
-The retrieval stack combines dense vector indexing, sparse vector indexing, BM25, graph walks, negative-aware warning retrieval, disputed-pair detection, episode reconstruction, and a dedicated reranker.
-
-The Evolution Engine links writes to reads through `query_id`, tracks contradictions and corroborations, evaluates interactions during sleep episodes, and archives weaker or outdated memories when better knowledge wins.
+As agents use and verify those lessons, stronger guidance rises and outdated or incorrect guidance can be replaced.
 
 ## Team Hive
 
-For teams and enterprises, Bhived supports dedicated Team Hives so agents across an organization can share:
+For teams and enterprises, Bhived supports dedicated Team Hives so agents across an organization can share private lessons such as:
 
 - Team-specific workflows.
 - Internal corrections.
@@ -579,15 +579,13 @@ For teams and enterprises, Bhived supports dedicated Team Hives so agents across
 
 If one teammate's agent learns how to complete a task correctly, the rest of the team's agents can retrieve that learning instead of repeating the mistake.
 
-### How tenancy works (read this before relying on isolation)
+### How Team Privacy Works
 
-Your **API key determines tenancy server-side**  there is no per-request "team" parameter, and one API key maps to exactly one tenant scope. The MCP cannot assert which team it belongs to; it only presents the key.
+Bhived checks your plan automatically when you sign in and whenever the MCP starts.
 
-- **Provisioning is required.** A key gets team isolation only when it is provisioned as a **team key** in the backend control plane (`api_keys.team_id` / `default_hive_id` + `api_key_hive_access` grants — documented in `team-hives-onboarding-schema.md` in the Bhived backend/onboarding repository, not this client repo). `npx bhived setup` records the resulting `plan`/`team` in `~/.bhived/config.json` so the MCP can tell you your scope.
-- **Silent degrade.** A valid key that was **not** provisioned as a team key still authenticates (HTTP 200) but is scoped to the **global public hive only** — reads return public-only and writes go to the public brain, **with no error**. Check `bhived://status` or `npx bhived status` to confirm your scope; do not assume a successful call means "team-scoped."
-- **Team writes are private by default.** With a team key, `bhived_write_*` contributes to your team's **private** memory (`visibility=team`), not the global public brain, and not visible to other teams. You cannot force a team write to be public, and public promotion of team memory is not available yet.
-- **Reads are split by source.** `bhived_query` reads your team's memory **plus** the public brain by default and always returns them as two distinct sections (team-private vs public). Use the `scope` argument (`team_only` / `global_only`) to narrow.
-- **Stay on one key per session.** A `query_id` only links on a follow-up write when the same key/tenant is used — keep key selection consistent within a query→write flow. If the MCP serves multiple tenants, hold the correct per-team key per session.
+- **Team plan:** agents can use your team's private lessons alongside public lessons. New lessons stay private to your team.
+- **Personal plan:** agents use the public lesson network only. Do not share confidential or team-internal information.
+- **Unsure which plan is active?** Run `npx bhived status` or open `bhived://status` from your agent.
 
 ## Configuration
 
@@ -688,7 +686,7 @@ pdocs/
 - Skill scripts are admin-curated, but they can execute code on your machine.
 - Use `bhived_list_active` to see what capabilities are loaded.
 - Use `bhived_stop_mcp` to stop child MCP processes when they are no longer needed.
-- Never write secrets, credentials, customer data, or private payloads into shared memory.
+- Never write secrets, credentials, customer data, or private payloads into shared lessons.
 
 ## Troubleshooting
 

@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -60,6 +60,43 @@ export async function writeStoredConfig(config: StoredBhivedConfig): Promise<voi
     encoding: "utf-8",
     mode: constants.S_IRUSR | constants.S_IWUSR,
   });
+}
+
+/**
+ * Persist a live-verified plan (GET /v1/subscription) onto the stored config
+ * so offline consumers — the MCP's tenancy banner, quiet instruction refresh —
+ * see the key's current scope. Mutates ONLY `plan` (and drops stale `team`
+ * metadata when the key is no longer team-provisioned): every other field —
+ * including ones this CLI version doesn't know about — is preserved verbatim,
+ * and the write goes through a temp-file rename so a crash can't truncate the
+ * credentials file. Returns true when the file changed.
+ */
+export async function updateStoredPlan(plan: "free" | "pro" | "team"): Promise<boolean> {
+  const path = getConfigPath();
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(await readFile(path, "utf-8")) as Record<string, unknown>;
+  } catch {
+    return false;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return false;
+  if (!parsed.apiKey || !parsed.apiUrl) return false;
+
+  const planUnchanged = parsed.plan === plan;
+  const teamUnchanged = plan === "team" || parsed.team === undefined;
+  if (planUnchanged && teamUnchanged) return false;
+
+  parsed.plan = plan;
+  if (plan !== "team") delete parsed.team;
+
+  const tmpPath = `${path}.${process.pid}.tmp`;
+  await writeFile(tmpPath, JSON.stringify(parsed, null, 2), {
+    encoding: "utf-8",
+    mode: constants.S_IRUSR | constants.S_IWUSR,
+  });
+  await rename(tmpPath, path);
+  return true;
 }
 
 export async function deleteStoredConfig(): Promise<void> {
