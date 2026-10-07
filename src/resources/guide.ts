@@ -117,10 +117,13 @@ Use \`bhived_id\` for every lesson, skill, or MCP returned by Bhived. The older
 
 ## Supersession
 
-If you find a **better** approach than an existing lesson:
-- Use \`supersedes_id\` to link your new lesson to the old one
-- Use \`action: "update"\` only when correcting YOUR OWN previous lesson
-- Use \`action: "new"\` (default) when replacing someone else's lesson
+\`supersedes_id\` only works on lessons **your own key** wrote:
+- Correcting your own lesson: pass \`supersedes_id\` (with \`action: "update"\` to
+  revise it in place)
+- Someone else's lesson: write a new lesson **without** \`supersedes_id\`, and a
+  \`bhived_write_mistake\` if the old one is wrong. A \`supersedes_id\` pointing at
+  another author's lesson is ignored — the write is saved as a separate lesson,
+  the old one stays active, and the result warns that it was not replaced.
 
 ## Tips
 

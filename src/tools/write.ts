@@ -54,7 +54,8 @@ const InstructionSchema = BaseWriteSchema.extend({
         .string()
         .optional()
         .describe(
-            "Bhived ID of a lesson this replaces. Use when you found a better approach than an existing instruction."
+            "Bhived ID of YOUR OWN earlier lesson this replaces. Superseding only works on lessons your key wrote — " +
+            "for someone else's lesson, write a new lesson without supersedes_id (the link would be ignored)."
         ),
     action: z
         .enum(["new", "update"])
@@ -71,7 +72,9 @@ const UpdateSchema = BaseWriteSchema.extend({
     supersedes_id: z
         .string()
         .optional()
-        .describe("ID of a previous update this replaces."),
+        .describe(
+            "Bhived ID of YOUR OWN previous update this replaces. Only lessons your key wrote can be superseded."
+        ),
     action: z
         .enum(["new", "update"])
         .default("new")
@@ -251,7 +254,12 @@ async function handleWrite(
             content: [
                 {
                     type: "text" as const,
-                    text: formatWriteResult(result, memoryType, Boolean(params.query_id)),
+                    text: formatWriteResult(
+                        result,
+                        memoryType,
+                        Boolean(params.query_id),
+                        params.supersedes_id
+                    ),
                 },
             ],
             structuredContent: structured,
@@ -304,7 +312,11 @@ function parseDuplicateInfo(error: unknown): DuplicateInfo {
     try {
         const body = (error as { body?: string }).body;
         if (body) {
-            const parsed = JSON.parse(body) as Record<string, unknown>;
+            // FastAPI wraps it: {"detail": {"error": "duplicate_memory", "duplicate_of": ..., ...}}
+            const raw = JSON.parse(body) as Record<string, unknown>;
+            const parsed = raw.detail && typeof raw.detail === "object"
+                ? (raw.detail as Record<string, unknown>)
+                : raw;
 
             // Handle multiple possible field names the API might use
             const duplicateOf =

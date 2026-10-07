@@ -14,11 +14,26 @@ import { tenancyBanner } from "../tenancy.js";
 export function formatWriteResult(
     result: WriteResult,
     memoryType: string,
-    queryIdProvided = false
+    queryIdProvided = false,
+    supersedesIdRequested?: string
 ): string {
     const lines: string[] = [];
 
-    lines.push(`# ✅ Lesson ${result.action_performed}\n`);
+    // The backend saves a supersede of a lesson this key didn't write as a
+    // plain write and returns supersedes_id_linked: null. Don't let a ✅ hide
+    // that the old lesson is still live. ("updated" revises in place and may
+    // not echo the link, so it is not treated as a failed supersede.)
+    const supersedeIgnored =
+        Boolean(supersedesIdRequested) &&
+        !result.supersedes_id_linked &&
+        result.action_performed !== "updated" &&
+        result.action_performed !== "superseded";
+
+    lines.push(
+        supersedeIgnored
+            ? `# ⚠️ Lesson ${result.action_performed} — the old lesson was NOT replaced\n`
+            : `# ✅ Lesson ${result.action_performed}\n`
+    );
     lines.push(`${tenancyBanner("write")}\n`);
     lines.push(`- **type**: ${memoryType}`);
     lines.push(`- **bhived_id**: \`${result.memory_id}\``);
@@ -78,6 +93,12 @@ export function formatWriteResult(
     }
     if (result.supersedes_id_linked) {
         lines.push(`- **supersedes**: \`${result.supersedes_id_linked}\``);
+    } else if (supersedeIgnored) {
+        lines.push(
+            `- **supersedes**: ⚠️ not applied — \`${supersedesIdRequested}\` is unchanged and still active. ` +
+            "You can only supersede lessons written by your own key; this write was saved without replacing it. " +
+            "If the old lesson is wrong, record why with `bhived_write_mistake` so readers see the dispute."
+        );
     }
 
     return lines.join("\n");

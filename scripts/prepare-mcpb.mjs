@@ -274,7 +274,7 @@ function writeInput(textDescription) {
         text: stringParam(textDescription),
         query_id: stringParam("Optional query_id returned by bhived_query."),
         model: stringParam("Optional AI model name."),
-        supersedes_id: stringParam("Optional Bhived ID of a lesson this write supersedes."),
+        supersedes_id: stringParam("Optional Bhived ID of your own earlier lesson this write supersedes. Lessons by other authors cannot be superseded."),
     }, ["title", "text"]);
 }
 
