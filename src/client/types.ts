@@ -62,6 +62,8 @@ export interface QueryMemory {
     corroboration_count?: number;
     contradiction_count?: number;
     times_retrieved?: number;
+    /** Ids of same-lesson results the backend folded into this one. Optional; safe to ignore. */
+    collapsed_ids?: string[];
 
     // Capability enrichment (added by backend when memory is a skill/MCP)
     has_skill?: boolean;

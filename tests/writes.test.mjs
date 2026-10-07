@@ -264,3 +264,24 @@ test("queries still retry 503 models_warming", async () => {
     assert.equal(queryCount, 2);
     assert.match(text(result), /q-warm/);
 });
+
+test("results show the ids folded into them, at most three", async () => {
+    const lesson = (id, collapsed) => ({
+        memory_id: id, title: `Lesson ${id}`, text: "body", type: "instruction", score: 0.9, collapsed_ids: collapsed,
+    });
+    queryScript = [];
+    queryResponse = {
+        query_id: "q-folded", team_recommendations: [],
+        public_recommendations: [
+            lesson("two", ["a1", "a2"]),
+            lesson("five", ["b1", "b2", "b3", "b4", "b5"]),
+            lesson("empty", []),
+            lesson("absent", undefined),
+        ],
+    };
+    const out = text(await call("bhived_query", { query: "folded" }));
+    assert.match(out, /^> \+2 similar folded in: `a1`, `a2` \(bhived_inspect for details\)$/m);
+    assert.match(out, /^> \+5 similar folded in: `b1`, `b2`, `b3`, \+2 more \(bhived_inspect for details\)$/m);
+    assert.doesNotMatch(out, /`b4`/);
+    assert.equal(out.match(/similar folded in/g).length, 2, "nothing for empty or missing collapsed_ids");
+});

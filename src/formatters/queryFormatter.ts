@@ -39,6 +39,7 @@ import {
 const MAX_SKILLS_SHOWN = 10;
 const MAX_MCPS_SHOWN = 10;
 const MAX_WORDS_SHOWN = 200;
+const MAX_COLLAPSED_IDS_SHOWN = 3;
 
 function trimTextForReadability(text: string, maxWords: number, memId: string | null = null): string {
     if (!text) return text;
@@ -350,6 +351,18 @@ function formatMemory(mem: QueryMemory, rank: number): string {
         meta.push(`bhived_id: \`${memId}\``);
     }
     lines.push(`> ${meta.join(" · ")}\n`);
+
+    // Same-lesson results the backend folded into this one
+    const collapsed = Array.isArray(mem.collapsed_ids)
+        ? mem.collapsed_ids.filter((id) => typeof id === "string" && id.length > 0)
+        : [];
+    if (collapsed.length > 0) {
+        const shown = collapsed.slice(0, MAX_COLLAPSED_IDS_SHOWN).map((id) => `\`${id}\``);
+        if (collapsed.length > MAX_COLLAPSED_IDS_SHOWN) {
+            shown.push(`+${collapsed.length - MAX_COLLAPSED_IDS_SHOWN} more`);
+        }
+        lines.push(`> +${collapsed.length} similar folded in: ${shown.join(", ")} (bhived_inspect for details)\n`);
+    }
 
     // Content
     const content = mem.text ? trimTextForReadability(mem.text, MAX_WORDS_SHOWN, memId) : "";
