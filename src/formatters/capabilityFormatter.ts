@@ -62,8 +62,13 @@ function normalizeHeaderRequirements(raw: unknown): EnvRequirement[] {
     if (!Array.isArray(raw)) return [];
     return raw.filter(
         (req): req is EnvRequirement =>
-            Boolean(req) && typeof req === "object" && typeof req.name === "string" && /^[A-Za-z0-9-]+$/.test(req.name)
+            Boolean(req) && typeof req === "object" && typeof req.name === "string" && /^[A-Za-z0-9_-]+$/.test(req.name)
     );
+}
+
+/** Backend metadata is untrusted: keep it on one line and out of code spans. */
+function clean(text: string): string {
+    return text.replace(/[\r\n\t]+/g, " ").replace(/[`|]/g, "").replace(/\s{2,}/g, " ").trim().slice(0, 80);
 }
 
 /**
@@ -92,17 +97,17 @@ export function formatQualitySignals(...sources: Array<Record<string, unknown> |
         const verdicts = Object.entries(audits)
             .filter(([, verdict]) => typeof verdict === "string")
             .slice(0, 6)
-            .map(([vendor, verdict]) => `${vendor}: ${verdict}`);
+            .map(([vendor, verdict]) => `${clean(vendor)}: ${clean(verdict as string)}`);
         if (verdicts.length > 0) parts.push(`🛡️ Audits: ${verdicts.join(", ")}`);
     }
 
     const publisher = pick("publisher");
-    if (typeof publisher === "string" && publisher) {
-        parts.push(`👤 Publisher: ${publisher}`);
+    if (typeof publisher === "string" && clean(publisher)) {
+        parts.push(`👤 Publisher: ${clean(publisher)}`);
     } else if (publisher && typeof publisher === "object") {
         const { name, verified } = publisher as { name?: unknown; verified?: unknown };
-        if (typeof name === "string" && name) {
-            parts.push(`👤 Publisher: ${name}${verified === true ? " (verified)" : ""}`);
+        if (typeof name === "string" && clean(name)) {
+            parts.push(`👤 Publisher: ${clean(name)}${verified === true ? " (verified)" : ""}`);
         }
     }
 

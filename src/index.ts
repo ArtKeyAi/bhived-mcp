@@ -6,6 +6,7 @@
  * and starts the appropriate transport (stdio or streamable-http).
  */
 
+import { createRequire } from "node:module";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { config } from "./config.js";
@@ -46,6 +47,15 @@ import { registerLearnAndSharePrompt } from "./prompts/learnAndShare.js";
 
 import { registerReviewLessonPrompt } from "./prompts/reviewMemory.js";
 
+// The npm package and the mcpb bundle both ship package.json next to dist/.
+const SERVER_VERSION: string = (() => {
+    try {
+        return (createRequire(import.meta.url)("../package.json") as { version: string }).version;
+    } catch {
+        return "unknown";
+    }
+})();
+
 // ── Server-level instructions ────────────────────────────────────
 // Injected into the client's system prompt via the MCP initialize
 // response, so agents get the usage protocol even when the host was
@@ -74,7 +84,7 @@ function createServer(): McpServer {
     const server = new McpServer(
         {
             name: "bhived-mcp",
-            version: "1.4.0",
+            version: SERVER_VERSION,
         },
         { instructions: buildServerInstructions() }
     );
@@ -450,7 +460,7 @@ async function runHttp(): Promise<void> {
         res.json({
             status: "ok",
             server: "bhived-mcp",
-            version: "2.0.0",
+            version: SERVER_VERSION,
             active_skills: skillRegistry.count(),
             active_mcps: childMcpRegistry.count(),
             active_resources: resourceRegistry.count(),

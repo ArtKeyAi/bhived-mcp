@@ -253,10 +253,11 @@ Options:
 
 Global instructions:
   On setup, bhived writes its Network Protocol block into each detected agent's
-  user-global instructions file (e.g. ~/.claude/CLAUDE.md, ~/.codex/AGENTS.md,
-  ~/.gemini/GEMINI.md) so it applies to all sessions — never the opened project.
-  Every other bhived command refreshes that block if a newer version ships.
-  Claude Desktop and Cursor keep global instructions in-app (no file) and are skipped.
+  user-global instructions file (e.g. ~/.claude/rules/bhived.md, ~/.codex/AGENTS.md,
+  ~/.gemini/GEMINI.md, ~/.cursor/rules/bhived.mdc) so it applies to all sessions —
+  never the opened project. Every other bhived command (except help) refreshes that
+  block if a newer version ships. Claude Desktop keeps global instructions in-app
+  (no file) and is skipped.
 
 Environment:
   BHIVED_WEBSITE_URL  Override website URL for auth, e.g. http://localhost:3000

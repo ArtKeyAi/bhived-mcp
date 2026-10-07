@@ -115,7 +115,6 @@ export interface SkillCapabilityMeta extends CapabilityQualitySignals {
     /** Backend may report this instead of `usage_count`. */
     activation_count?: number;
     success_rate?: number;
-    env_requirements?: EnvRequirement[];
     metadata?: Record<string, unknown>;
 }
 

@@ -397,9 +397,6 @@ function formatRecommendedSkills(skills: QueryMemory[]): string {
             lines.push(`📦 **Resources:** ${resources.join(" · ")}\n`);
         }
 
-        const requirements = formatEnvRequirements(sm.env_requirements);
-        if (requirements) lines.push(`${requirements}\n`);
-
         const quality = formatQualitySignals(asRecord(sm), asRecord(sm.metadata));
         if (quality) lines.push(`${quality}\n`);
 
