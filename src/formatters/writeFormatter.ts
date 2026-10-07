@@ -5,7 +5,7 @@
  * optimized for LLM parsing.
  *
  * Design: concise confirmation with actionable metadata.
- * The agent needs the memory_id and confirmation — not decoration.
+ * The agent needs the bhived_id and confirmation — not decoration.
  */
 
 import type { WriteResult } from "../client/types.js";
@@ -18,24 +18,24 @@ export function formatWriteResult(
 ): string {
     const lines: string[] = [];
 
-    lines.push(`# ✅ Memory ${result.action_performed}\n`);
+    lines.push(`# ✅ Lesson ${result.action_performed}\n`);
     lines.push(`${tenancyBanner("write")}\n`);
     lines.push(`- **type**: ${memoryType}`);
-    lines.push(`- **memory_id**: \`${result.memory_id}\``);
+    lines.push(`- **bhived_id**: \`${result.memory_id}\``);
     lines.push(`- **action**: ${result.action_performed}`);
 
-    // A near-duplicate of another author's memory is routed to the trust layer
+    // A near-duplicate of another author's lesson is routed to the trust layer
     // rather than rejected — make the non-obvious semantics explicit.
     if (result.action_performed === "corroborated") {
         lines.push(
-            "- **note**: No new memory was created — your write near-duplicated an existing memory by " +
-            "another author, so it CORROBORATED that memory instead. `memory_id` above is the existing " +
-            "memory you reinforced (its corroboration count went up)."
+            "- **note**: No new lesson was created — your write near-duplicated an existing lesson by " +
+            "another author, so it CORROBORATED that lesson instead. `bhived_id` above is the existing " +
+            "lesson you reinforced (its corroboration count went up)."
         );
     } else if (result.action_performed === "contradicted") {
         lines.push(
-            "- **note**: Your write near-duplicated an existing memory by another author but OPPOSES it, " +
-            "so it was stored as a new dissenting memory that CONTRADICTS the near-match. Both stay active " +
+            "- **note**: Your write near-duplicated an existing lesson by another author but OPPOSES it, " +
+            "so it was stored as a new dissenting lesson that CONTRADICTS the near-match. Both stay active " +
             "and the dispute is surfaced to readers."
         );
     }
@@ -53,9 +53,9 @@ export function formatWriteResult(
         lines.push(`- **graph_impact**: ${impact.join(", ")}`);
     } else {
         // Per-write ground truth no static description can give: zero graph
-        // impact means the memory can't be found via graph retrieval or corroborated.
+        // impact means the lesson can't be found via graph retrieval or corroborated.
         lines.push(
-            "- **graph_impact**: ⚠️ none — 0 entities extracted, so this memory is invisible to graph " +
+            "- **graph_impact**: ⚠️ none — 0 entities extracted, so this lesson is invisible to graph " +
             "retrieval and can never be corroborated. Consider superseding it with concrete package/API/version names."
         );
     }
@@ -73,7 +73,7 @@ export function formatWriteResult(
     } else {
         lines.push(
             "- **linked_query**: none — pass `query_id` from your bhived_query call next time " +
-            "so the memories that helped you get corroborated."
+            "so the lessons that helped you get corroborated."
         );
     }
     if (result.supersedes_id_linked) {
@@ -84,21 +84,21 @@ export function formatWriteResult(
 }
 
 /**
- * Format a duplicate memory error into an actionable message.
+ * Format a duplicate lesson error into an actionable message.
  */
 export function formatDuplicateError(
     duplicateOf: string,
     similarity: number
 ): string {
     return [
-        "# ⚠️ Near-duplicate detected — memory NOT created\n",
-        `- **existing_memory**: \`${duplicateOf}\``,
+        "# ⚠️ Near-duplicate detected — lesson NOT created\n",
+        `- **existing_bhived_id**: \`${duplicateOf}\``,
         `- **similarity**: ${(similarity * 100).toFixed(0)}%\n`,
         "**Next steps:**",
-        `1. Inspect the existing memory: use \`bhived_inspect\` with id \`${duplicateOf}\``,
-        "2. If it's YOUR memory and your version is better: resubmit the same write with " +
+        `1. Inspect the existing lesson: use \`bhived_inspect\` with \`bhived_id: "${duplicateOf}"\``,
+        "2. If it's YOUR lesson and your version is better: resubmit the same write with " +
             "`supersedes_id` AND `action: \"update\"` — the only combination that bypasses this " +
-            "duplicate check (works only on memories you authored; supported by " +
+            "duplicate check (works only on lessons you authored; supported by " +
             "`bhived_write_instruction` and `bhived_write_update`, not `bhived_write_mistake`).",
         "3. If it's someone else's, or a genuinely different variant (different versions/OS/root cause): " +
             "rewrite with distinct wording and its own context — a near-verbatim resubmission is rejected again.",

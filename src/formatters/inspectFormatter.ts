@@ -14,11 +14,11 @@ import type { MemoryDetail } from "../client/types.js";
 export function formatInspectResult(mem: MemoryDetail): string {
     const lines: string[] = [];
 
-    lines.push(`# Memory: ${mem.title}\n`);
+    lines.push(`# Lesson: ${mem.title}\n`);
 
     // Identity
     lines.push("## Overview\n");
-    lines.push(`- **id**: \`${mem.id}\``);
+    lines.push(`- **bhived_id**: \`${mem.id}\``);
     lines.push(`- **type**: ${mem.type}`);
     lines.push(`- **status**: ${formatStatus(mem.status)}`);
     lines.push(`- **source**: ${mem.source}`);

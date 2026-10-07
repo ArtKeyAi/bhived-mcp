@@ -1,26 +1,25 @@
 /**
  * bhived_inspect Tool
  *
- * Inspects the full state of a memory in the knowledge graph.
+ * Inspects the full state of a lesson in the knowledge graph.
  */
 
 import { z } from "zod/v4";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { restClient } from "../client/restClient.js";
 import { formatInspectResult } from "../formatters/inspectFormatter.js";
+import {
+    BhivedIdInputSchema,
+    resolveBhivedId,
+    type BhivedIdInput,
+} from "./bhivedId.js";
 
-const InspectInputSchema = z.object({
-    memory_id: z
-        .string()
-        .min(1, "Memory ID must not be empty")
-        .describe("The ID of the memory to inspect."),
-}).strict();
-
-type InspectInput = z.infer<typeof InspectInputSchema>;
+const InspectInputSchema = BhivedIdInputSchema;
+type InspectInput = BhivedIdInput;
 
 // Output schema for structured content
 const InspectOutputSchema = z.object({
-    id: z.string(),
+    bhived_id: z.string(),
     text: z.string(),
     title: z.string(),
     type: z.string(),
@@ -39,17 +38,19 @@ const InspectOutputSchema = z.object({
     restore_count: z.number().optional().default(0),
 });
 
-const INSPECT_DESC = `Inspect the full state of a memory in the knowledge graph.
-Returns the memory's text, type, status, evolution scores,
+const INSPECT_DESC = `Inspect the full state of a lesson in the Bhived knowledge graph.
+Returns the lesson's text, type, status, evolution scores,
 corroboration/contradiction counts, version history, and
 connected edges. Use this to verify the impact of your writes
-or to understand why a memory ranks where it does.`;
+or to understand why a lesson ranks where it does.
+
+Pass bhived_id. The deprecated memory_id alias is accepted for compatibility.`;
 
 export function registerInspectTool(server: McpServer): void {
     server.registerTool(
         "bhived_inspect",
         {
-            title: "Inspect Memory State",
+            title: "Inspect Lesson State",
             description: INSPECT_DESC,
             inputSchema: InspectInputSchema,
             outputSchema: InspectOutputSchema,
@@ -61,13 +62,14 @@ export function registerInspectTool(server: McpServer): void {
             },
         },
         async (params: InspectInput) => {
+            const bhivedId = resolveBhivedId(params);
             try {
-                const memory = await restClient.getMemory(params.memory_id);
+                const memory = await restClient.getMemory(bhivedId);
 
                 // Structured output for programmatic clients
                 // Use defaults for optional fields to prevent schema validation errors
                 const structured = {
-                    id: memory.id,
+                    bhived_id: memory.id,
                     text: memory.text,
                     title: memory.title,
                     type: memory.type,
@@ -101,10 +103,10 @@ export function registerInspectTool(server: McpServer): void {
                             {
                                 type: "text" as const,
                                 text:
-                                    `Memory not available: ${params.memory_id}. Either it does not exist, or it lives ` +
-                                    `in a hive your API key cannot read (memories/capabilities outside your readable ` +
-                                    `hives return 404, not 403 — no existence disclosure). A memory_id seen under a ` +
-                                    `different team/key is not inspectable here. Check the ID and your key's scope.`,
+                                    `Lesson or capability not available: ${bhivedId}. Either it does not exist, or it lives ` +
+                                    `in a hive your API key cannot read (items outside your readable hives return 404, ` +
+                                    `not 403 — no existence disclosure). A bhived_id seen under a different team/key ` +
+                                    `is not inspectable here. Check the ID and your key's scope.`,
                             },
                         ],
                         isError: true,
@@ -115,7 +117,7 @@ export function registerInspectTool(server: McpServer): void {
                     content: [
                         {
                             type: "text" as const,
-                            text: `Error inspecting memory: ${error instanceof Error ? error.message : String(error)}`,
+                            text: `Error inspecting lesson: ${error instanceof Error ? error.message : String(error)}`,
                         },
                     ],
                     isError: true,

@@ -470,13 +470,14 @@ bhived_query(
 If the result includes a relevant capability, the agent can activate it in the current session:
 
 ```text
-bhived_initiate_skill(memory_id="github/awesome-copilot/create-readme")
-bhived_initiate_mcp(memory_id="example/playwright-mcp")
+bhived_initiate_skill(bhived_id="github/awesome-copilot/create-readme")
+bhived_initiate_mcp(bhived_id="example/playwright-mcp")
 ```
 
 ## MCP Tools
 
 Bhived MCP exposes tools for shared lessons, skills, and connected MCP tools.
+Lessons, skills, and MCPs use one agent-facing identifier: `bhived_id`.
 
 ### Shared Lessons
 
@@ -512,7 +513,7 @@ Bhived MCP exposes tools for shared lessons, skills, and connected MCP tools.
 | Prompt | Purpose |
 | --- | --- |
 | `learn_and_share` | Guides an agent through querying, solving, verifying, and writing back reusable knowledge. |
-| `review_memory` | Guides an agent through reviewing and correcting a lesson. |
+| `review_lesson` | Guides an agent through reviewing and correcting a lesson. |
 
 ## CLI Reference
 

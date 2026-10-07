@@ -51,9 +51,9 @@ const manifest = {
     name: pkg.name,
     display_name: "Bhived MCP",
     version: pkg.version,
-    description: "Shared AI memory with reusable skills and MCP server discovery for agents.",
+    description: "Shared AI lessons with reusable skills and MCP server discovery for agents.",
     long_description:
-        "Bhived MCP connects AI agents to Bhived shared memory so they can search proven solutions, avoid known mistakes, activate reusable skills, discover and spawn MCP servers, call child MCP tools, and write back verified learning.",
+        "Bhived MCP connects AI agents to shared lessons so they can search proven solutions, avoid known mistakes, activate reusable skills, discover and spawn MCP servers, call child MCP tools, and write back verified learning.",
     author: {
         name: pkg.author,
     },
@@ -109,20 +109,20 @@ if (includeSmitheryScoreMetadata) {
     manifest.tools = buildToolMetadata({ dotNames: true });
     manifest.prompts = [
         {
-            name: "memory.learn_and_share",
+            name: "lessons.learn_and_share",
             title: "Learn and Share",
             description: "Use bhived before a non-trivial task, then close the loop if you learn something reusable.",
             arguments: [
-                { name: "task", description: "The task to complete using bhived shared memory.", required: true },
+                { name: "task", description: "The task to complete using Bhived's shared lessons.", required: true },
                 { name: "context", description: "Tech stack, constraints, or other relevant context.", required: false },
             ],
         },
         {
-            name: "memory.review",
-            title: "Review Memory",
-            description: "Inspect a bhived memory and decide if verified correction or supersession is needed.",
+            name: "lessons.review",
+            title: "Review Lesson",
+            description: "Inspect a Bhived lesson and decide if verified correction or supersession is needed.",
             arguments: [
-                { name: "memory_id", description: "The memory to review.", required: true },
+                { name: "bhived_id", description: "The Bhived ID of the lesson to review.", required: true },
             ],
         },
     ];
@@ -166,16 +166,16 @@ function buildStaticResponses() {
                     title: "Learn and Share",
                     description: "Use bhived before a non-trivial task, then close the loop if you learn something reusable.",
                     arguments: [
-                        { name: "task", description: "The task to complete using bhived shared memory.", required: true },
+                        { name: "task", description: "The task to complete using Bhived's shared lessons.", required: true },
                         { name: "context", description: "Tech stack, constraints, or other relevant context.", required: false },
                     ],
                 },
                 {
-                    name: "review_memory",
-                    title: "Review Memory",
-                    description: "Inspect a bhived memory and decide if verified correction or supersession is needed.",
+                    name: "review_lesson",
+                    title: "Review Lesson",
+                    description: "Inspect a Bhived lesson and decide if verified correction or supersession is needed.",
                     arguments: [
-                        { name: "memory_id", description: "The memory to review.", required: true },
+                        { name: "bhived_id", description: "The Bhived ID of the lesson to review.", required: true },
                     ],
                 },
             ],
@@ -187,29 +187,27 @@ function buildToolMetadata({ dotNames = false } = {}) {
     const name = (flatName, dottedName) => dotNames ? dottedName : flatName;
 
     return [
-        tool(name("bhived_query", "memory.query"), "Search the Hive", "Search bhived shared memory for proven instructions, known pitfalls, warnings, skills, and MCPs before non-trivial work. Results are returned as separate team and public sections.", objectSchema({
+        tool(name("bhived_query", "lessons.query"), "Search the Hive", "Search Bhived's shared lessons for proven instructions, known pitfalls, warnings, skills, and MCPs before non-trivial work. Results are returned as separate team and public sections.", objectSchema({
             query: stringParam("One specific question with your most discriminative terms — exact error text, package names with versions. Keyword search runs on this field."),
             context: stringParam("Optional, term-rich: stack, versions, constraints, and failed approaches as compact keyword phrases. Never keyword-searched — keep exact error strings in `query`."),
             top_k: integerParam("Maximum number of results to return.", { minimum: 1, maximum: 100, default: 10 }),
             include_episodes: booleanParam("Include temporal episode chains related to the query.", true),
             include_warnings: booleanParam("Include warnings about known mistakes relevant to the query.", true),
-            include_disputed: booleanParam("Include disputed memory pairs relevant to the query.", true),
-            scope: enumParam("Which memory to search. Usually leave unset — team keys see BOTH team and public results. team_only / global_only narrow to one tier.", ["team_plus_global", "team_only", "global_only"]),
+            include_disputed: booleanParam("Include disputed lesson pairs relevant to the query.", true),
+            scope: enumParam("Which lesson tier to search. Usually leave unset — team keys see BOTH team and public results. team_only / global_only narrow to one tier.", ["team_plus_global", "team_only", "global_only"]),
         }, ["query"]), textOutput(), readOnly()),
-        tool(name("bhived_inspect", "memory.inspect"), "Inspect Memory State", "Inspect a memory's full state, status, evolution scores, version history, and graph connections.", objectSchema({
-            memory_id: stringParam("The memory ID to inspect."),
-        }, ["memory_id"]), objectSchema({
-            id: stringParam("Memory ID."),
-            text: stringParam("Memory body text."),
-            title: stringParam("Memory title."),
-            type: stringParam("Memory type."),
-            status: stringParam("Memory lifecycle status."),
-        }, ["id", "text", "title", "type", "status"]), readOnly()),
-        tool(name("bhived_write_instruction", "memory.write.instruction"), "Share What Works", "Write a verified reusable working approach to bhived shared memory.", writeInput("Detailed verified working approach."), writeOutput(), mutating()),
-        tool(name("bhived_write_mistake", "memory.write.mistake"), "Warn About Failures", "Write a verified failed approach, error, and root cause so future agents avoid it.", writeInput("Detailed failure, error, conditions, and root cause."), writeOutput(), mutating()),
-        tool(name("bhived_write_update", "memory.write.update"), "Share Factual Changes", "Write a factual or version update such as API changes, deprecations, or breaking changes.", writeInput("Detailed factual update and new correct approach."), writeOutput(), mutating()),
-        tool(name("bhived_initiate_skill", "skills.activate"), "Initiate Skill", "Activate a reusable skill bundle from bhived, including instructions, resources, scripts, and optionally bundled MCPs.", memoryInput("The bhived skill memory or capability ID to activate."), textOutput(), mutating({ idempotentHint: true })),
-        tool(name("bhived_initiate_mcp", "mcps.activate"), "Initiate MCP", "Activate and spawn a discovered MCP server from bhived so its tools can be called through bhived_use_tool.", memoryInput("The bhived MCP memory or capability ID to activate."), textOutput(), mutating({ idempotentHint: true })),
+        tool(name("bhived_inspect", "lessons.inspect"), "Inspect Lesson State", "Inspect a lesson's full state, status, evolution scores, version history, and graph connections.", bhivedInput("The Bhived ID of the lesson to inspect."), objectSchema({
+            bhived_id: stringParam("Bhived ID."),
+            text: stringParam("Lesson body text."),
+            title: stringParam("Lesson title."),
+            type: stringParam("Lesson type."),
+            status: stringParam("Lesson lifecycle status."),
+        }, ["bhived_id", "text", "title", "type", "status"]), readOnly()),
+        tool(name("bhived_write_instruction", "lessons.write.instruction"), "Share What Works", "Write a verified reusable working approach as a Bhived lesson.", writeInput("Detailed verified working approach."), writeOutput(), mutating()),
+        tool(name("bhived_write_mistake", "lessons.write.mistake"), "Warn About Failures", "Write a verified failed approach, error, and root cause as a lesson so future agents avoid it.", writeInput("Detailed failure, error, conditions, and root cause."), writeOutput(), mutating()),
+        tool(name("bhived_write_update", "lessons.write.update"), "Share Factual Changes", "Write a factual or version update as a lesson, such as API changes, deprecations, or breaking changes.", writeInput("Detailed factual update and new correct approach."), writeOutput(), mutating()),
+        tool(name("bhived_initiate_skill", "skills.activate"), "Initiate Skill", "Activate a reusable skill bundle from Bhived, including instructions, resources, scripts, and optionally bundled MCPs.", bhivedInput("The Bhived ID of the skill to activate."), textOutput(), mutating({ idempotentHint: true })),
+        tool(name("bhived_initiate_mcp", "mcps.activate"), "Initiate MCP", "Activate and spawn a discovered MCP server from Bhived so its tools can be called through bhived_use_tool.", bhivedInput("The Bhived ID of the MCP to activate."), textOutput(), mutating({ idempotentHint: true })),
         tool(name("bhived_stop_mcp", "mcps.stop"), "Stop MCP", "Stop a running child MCP server and free local resources.", objectSchema({
             mcp: stringParam("Name of the active MCP server to stop."),
         }, ["mcp"]), textOutput(), { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false }),
@@ -263,8 +261,11 @@ function enumParam(description, values, defaultValue) {
     return { type: "string", description, enum: values, default: defaultValue };
 }
 
-function memoryInput(description) {
-    return objectSchema({ memory_id: stringParam(description) }, ["memory_id"]);
+function bhivedInput(description) {
+    return objectSchema({
+        bhived_id: stringParam(description),
+        memory_id: stringParam("Deprecated compatibility alias for bhived_id."),
+    }, ["bhived_id"]);
 }
 
 function writeInput(textDescription) {
@@ -273,7 +274,7 @@ function writeInput(textDescription) {
         text: stringParam(textDescription),
         query_id: stringParam("Optional query_id returned by bhived_query."),
         model: stringParam("Optional AI model name."),
-        supersedes_id: stringParam("Optional memory ID this write supersedes."),
+        supersedes_id: stringParam("Optional Bhived ID of a lesson this write supersedes."),
     }, ["title", "text"]);
 }
 
@@ -283,9 +284,9 @@ function textOutput() {
 
 function writeOutput() {
     return objectSchema({
-        memory_id: stringParam("ID of the created or updated memory."),
-        action_performed: enumParam("Write action performed.", ["created", "updated", "superseded"], "created"),
-    }, ["memory_id", "action_performed"]);
+        bhived_id: stringParam("Bhived ID of the created or updated lesson."),
+        action_performed: enumParam("Write action performed.", ["created", "updated", "superseded", "corroborated", "contradicted"], "created"),
+    }, ["bhived_id", "action_performed"]);
 }
 
 function readOnly(overrides = {}) {

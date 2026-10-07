@@ -1,7 +1,7 @@
 /**
  * bhived://status Resource
  *
- * Returns current Bhived system status — graph health and memory counts.
+ * Returns current Bhived system status — graph health and lesson counts.
  */
 
 import { restClient } from "../client/restClient.js";
@@ -66,12 +66,12 @@ export async function getStatusContent(): Promise<string> {
 
     lines.push("");
 
-    // Memory counts
+    // Lesson counts (the REST client keeps the backend memory terminology).
     try {
         const memories = await restClient.listMemories({ limit: 1 });
-        lines.push(`  📝 Total memories: ${memories.total}`);
+        lines.push(`  📝 Total lessons: ${memories.total}`);
     } catch (error: unknown) {
-        lines.push(`  ❌ Memory count failed: ${error instanceof Error ? error.message : String(error)}`);
+        lines.push(`  ❌ Lesson count failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     lines.push("");

@@ -252,7 +252,7 @@ Options:
   --instructions-only Only write the global instructions file; skip MCP config
 
 Global instructions:
-  On setup, bhived writes its Memory Protocol block into each detected agent's
+  On setup, bhived writes its Network Protocol block into each detected agent's
   user-global instructions file (e.g. ~/.claude/CLAUDE.md, ~/.codex/AGENTS.md,
   ~/.gemini/GEMINI.md) so it applies to all sessions — never the opened project.
   Every other bhived command refreshes that block if a newer version ships.

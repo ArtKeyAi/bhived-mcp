@@ -18,7 +18,7 @@ export function registerLearnAndSharePrompt(server: McpServer): void {
             argsSchema: {
                 task: z
                     .string()
-                    .describe("The task to complete using bhived shared memory."),
+                    .describe("The task to complete using Bhived's shared lessons."),
                 context: z
                     .string()
                     .optional()
@@ -36,7 +36,7 @@ export function registerLearnAndSharePrompt(server: McpServer): void {
                         role: "user",
                         content: {
                             type: "text",
-                            text: `You are about to solve a task using bhived, the shared AI memory graph.
+                            text: `You are about to solve a task using Bhived's shared lessons and knowledge graph.
 
 ## Task
 ${task}${contextLine}

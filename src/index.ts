@@ -43,13 +43,13 @@ import { AGENT_GUIDE } from "./resources/guide.js";
 // Prompts
 import { registerLearnAndSharePrompt } from "./prompts/learnAndShare.js";
 
-import { registerReviewMemoryPrompt } from "./prompts/reviewMemory.js";
+import { registerReviewLessonPrompt } from "./prompts/reviewMemory.js";
 
 // ── Server-level instructions ────────────────────────────────────
 // Injected into the client's system prompt via the MCP initialize
 // response, so agents get the usage protocol even when the host was
 // never configured with `bhived setup`. Compressed version of the
-// bhived Memory Protocol (packages/bhived/src/globalInstructions.ts).
+// bhived Network Protocol (packages/bhived/src/globalInstructions.ts).
 // Built AFTER the startup tenancy sync so the scope clause matches
 // what the key can actually do (GET /v1/subscription).
 
@@ -57,12 +57,12 @@ function buildServerInstructions(): string {
     const t = getTenancy();
     const scopeClause =
         t.state === "team"
-            ? `Your key is team-scoped (${verificationPhrase()}): results come back as separate team and public sections, and writes land in your team's private memory.`
+            ? `Your key is team-scoped (${verificationPhrase()}): results come back as separate team and public sections, and writes land in your team's private lessons.`
             : t.state === "personal"
                 ? `Your key is personal (plan: ${t.plan}, ${verificationPhrase()}): reads and writes use the global public brain only — there is no team tier, so never write anything confidential.`
                 : "Results come back as separate team and public sections when your key is team-provisioned (scope unverified this session — check bhived://status).";
 
-    return `bhived is shared memory for AI agents. Before solving specialized, unfamiliar, risky, or medium/hard tasks — and after 2 failed attempts, version/API uncertainty, or a user correction — call \`bhived_query\` instead of guessing. Put your most discriminative terms (exact error text, package names with versions) in \`query\`; put stack, constraints, and failed approaches as compact keyword phrases in \`context\`, never narrative prose. Save the returned \`query_id\`. ${scopeClause} Verify each result actually matches your stack before applying it — scores are retrieval similarity, not verified correctness, and an empty Warnings section is NOT evidence an approach is safe. After a verified success or dead end, close the loop with \`bhived_write_instruction\` / \`bhived_write_mistake\` / \`bhived_write_update\`, passing the same \`query_id\` under the same API key. Keep writes under ~350 words, name concrete packages/versions, and quote errors verbatim. Read \`bhived://guide\` for details.`;
+    return `Bhived is a shared lesson network for AI agents. Before solving specialized, unfamiliar, risky, or medium/hard tasks — and after 2 failed attempts, version/API uncertainty, or a user correction — call \`bhived_query\` instead of guessing. Put your most discriminative terms (exact error text, package names with versions) in \`query\`; put stack, constraints, and failed approaches as compact keyword phrases in \`context\`, never narrative prose. Save the returned \`query_id\`. ${scopeClause} Verify each result actually matches your stack before applying it — scores are retrieval similarity, not verified correctness, and an empty Warnings section is NOT evidence an approach is safe. After a verified success or dead end, close the loop with \`bhived_write_instruction\` / \`bhived_write_mistake\` / \`bhived_write_update\`, passing the same \`query_id\` under the same API key. Keep lessons under ~350 words, name concrete packages/versions, and quote errors verbatim. Read \`bhived://guide\` for details.`;
 }
 
 // ── Server factory ───────────────────────────────────────────────
@@ -73,7 +73,7 @@ function createServer(): McpServer {
     const server = new McpServer(
         {
             name: "bhived-mcp",
-            version: "1.3.0",
+            version: "1.4.0",
         },
         { instructions: buildServerInstructions() }
     );
@@ -101,7 +101,7 @@ function createServer(): McpServer {
         {
             title: "Bhived Status",
             description:
-                "Current Bhived status — your API key's tenancy/scope, health metrics (graph/redis connectivity), and total memory count. For active skills/MCPs see bhived://capabilities.",
+                "Current Bhived status — your API key's tenancy/scope, health metrics (graph/redis connectivity), and total lesson count. For active skills/MCPs see bhived://capabilities.",
             mimeType: "text/plain",
         },
         async (uri) => ({
@@ -203,9 +203,9 @@ function createServer(): McpServer {
 
     // ── Register prompts ─────────────────────────────────────────
     registerLearnAndSharePrompt(server);
-    registerReviewMemoryPrompt(server);
+    registerReviewLessonPrompt(server);
 
-    // NOTE: The full bhived Memory Protocol block is written by the `bhived`
+    // NOTE: The full bhived Network Protocol block is written by the `bhived`
     // CLI (`bhived setup`) into each agent's user-global instructions file.
     // Hosts that never ran setup still receive the compressed protocol via
     // SERVER_INSTRUCTIONS above (MCP initialize → system prompt).
@@ -229,7 +229,7 @@ function buildCapabilitiesOverview(): string {
             const scriptCount = Object.keys(skill.scripts).length;
             const refCount = Object.keys(skill.references).length;
             const assetCount = Object.keys(skill.assets).length;
-            lines.push(`- **${skill.name}** (memory: \`${skill.memory_id}\`)`);
+            lines.push(`- **${skill.name}** (bhived_id: \`${skill.memory_id}\`)`);
             lines.push(`  📦 ${scriptCount} scripts, ${refCount} references, ${assetCount} assets`);
             if (skill.mcp_names.length > 0) {
                 lines.push(`  🔌 Bundled MCPs: ${skill.mcp_names.join(", ")}`);

@@ -9,7 +9,6 @@
  * and bundled MCP tool tables so the agent can immediately use them.
  */
 
-import { z } from "zod/v4";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { restClient } from "../client/restClient.js";
 import { skillRegistry } from "../registries/skillRegistry.js";
@@ -18,21 +17,20 @@ import { childMcpManager } from "../childMcp/manager.js";
 import type { ChildMcpTool } from "../registries/childMcpRegistry.js";
 import type { McpConfig } from "../client/types.js";
 import { config } from "../config.js";
+import {
+    BhivedIdInputSchema,
+    resolveBhivedId,
+    type BhivedIdInput,
+} from "./bhivedId.js";
 
 // ── Input Schema ─────────────────────────────────────────────────
 
-const InitiateSkillInputSchema = z.object({
-    memory_id: z
-        .string()
-        .min(1)
-        .describe("The bhived skill memory/capability ID to activate."),
-}).strict();
-
-type InitiateSkillInput = z.infer<typeof InitiateSkillInputSchema>;
+const InitiateSkillInputSchema = BhivedIdInputSchema;
+type InitiateSkillInput = BhivedIdInput;
 
 // ── Tool Description ─────────────────────────────────────────────
 
-const INITIATE_SKILL_DESCRIPTION = `Load and activate a skill from bhived shared memory.
+const INITIATE_SKILL_DESCRIPTION = `Load and activate a skill discovered through Bhived.
 Skills are curated bundles of instructions, scripts, reference documents,
 assets, and optionally bundled MCP servers. Once activated, you gain access
 to the skill's SKILL.md instructions and can use:
@@ -40,7 +38,9 @@ to the skill's SKILL.md instructions and can use:
 - bhived_read_resource to read reference docs and assets
 - bhived_use_tool for any bundled MCP tools
 
-Example: bhived_initiate_skill(memory_id="mem_abc123")`;
+Pass bhived_id. The deprecated memory_id alias is accepted for compatibility.
+
+Example: bhived_initiate_skill(bhived_id="mem_abc123")`;
 
 // ── Registration ─────────────────────────────────────────────────
 
@@ -59,11 +59,12 @@ export function registerInitiateSkillTool(server: McpServer): void {
             },
         },
         async (params: InitiateSkillInput) => {
+            const bhivedId = resolveBhivedId(params);
             try {
                 // Limit is automatically managed by the registry to the last 5 skills.
 
                 // 2. Call backend to activate and get the payload
-                const activation = await restClient.activateCapability(params.memory_id);
+                const activation = await restClient.activateCapability(bhivedId);
 
                 // 3. Validate response
                 if (!activation.ok) {
@@ -71,7 +72,7 @@ export function registerInitiateSkillTool(server: McpServer): void {
                         content: [
                             {
                                 type: "text" as const,
-                                text: `❌ Backend declined activation for memory '${params.memory_id}'.`,
+                                text: `❌ Backend declined activation for Bhived item '${bhivedId}'.`,
                             },
                         ],
                         isError: true,
@@ -84,7 +85,7 @@ export function registerInitiateSkillTool(server: McpServer): void {
                             {
                                 type: "text" as const,
                                 text:
-                                    `❌ Memory '${params.memory_id}' is a **${activation.capability_type}**, not a skill. ` +
+                                    `❌ Bhived item '${bhivedId}' is a **${activation.capability_type}**, not a skill. ` +
                                     `Use \`bhived_initiate_mcp\` instead.`,
                             },
                         ],
@@ -175,7 +176,7 @@ export function registerInitiateSkillTool(server: McpServer): void {
                                 mcpConfig as McpConfig,
                                 {
                                     source: `skill:${skillName}`,
-                                    memory_id: params.memory_id,
+                                    memory_id: bhivedId,
                                 }
                             );
                             spawnedMcpNames.push(result.name);
@@ -197,7 +198,7 @@ export function registerInitiateSkillTool(server: McpServer): void {
 
                 // 8. Register skill in SkillRegistry (with cleaned keys)
                 skillRegistry.add({
-                    memory_id: params.memory_id,
+                    memory_id: bhivedId,
                     name: skillName,
                     skill_md: payload.skill_md,
                     scripts: cleanScripts,
@@ -210,7 +211,7 @@ export function registerInitiateSkillTool(server: McpServer): void {
 
                 // 8. Fire-and-forget activation tracking
                 restClient
-                    .reportCapability(params.memory_id, {
+                    .reportCapability(bhivedId, {
                         success: true,
                     })
                     .catch((err: unknown) => {
@@ -248,7 +249,7 @@ export function registerInitiateSkillTool(server: McpServer): void {
                             {
                                 type: "text" as const,
                                 text:
-                                    `❌ Skill '${params.memory_id}' is not available to this API key/tenant. ` +
+                                    `❌ Skill '${bhivedId}' is not available to this API key/tenant. ` +
                                     `Capabilities outside your readable hives return 404 (treated as nonexistent, ` +
                                     `not "forbidden"). Don't assume an ID seen under another key/team is activatable here — ` +
                                     `query with this key (or use bhived_list_active) to see which capabilities you can use.`,

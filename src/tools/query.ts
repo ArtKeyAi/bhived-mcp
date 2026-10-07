@@ -1,7 +1,7 @@
 /**
  * bhived_query Tool
  *
- * Searches bhived shared memory and returns ranked recommendations,
+ * Searches Bhived's shared lessons and returns ranked recommendations,
  * warnings, and disputed pairs — always via /v2/query, which splits
  * team-private and public results into separate sections.
  *
@@ -56,18 +56,18 @@ const QueryInputSchema = z.object({
     include_disputed: z
         .boolean()
         .default(true)
-        .describe("Include disputed memory pairs (conflicting knowledge) relevant to your query (leave on)."),
+        .describe("Include disputed lesson pairs (conflicting knowledge) relevant to your query (leave on)."),
     scope: z
         .enum(["team_plus_global", "team_only", "global_only"])
         .optional()
         .describe(
-            "Which memory to search (default team_plus_global): " +
-            "'team_plus_global' = your team's private memory + the shared public brain; " +
-            "'team_only' = ONLY your team's memory (no public fallback — an empty team hive returns nothing); " +
+            "Which lesson tier to search (default team_plus_global): " +
+            "'team_plus_global' = your team's private lessons + the shared public brain; " +
+            "'team_only' = ONLY your team's lessons (no public fallback — an empty team hive returns nothing); " +
             "'global_only' = ONLY the shared public brain. " +
             "Usually leave this unset — team keys should see BOTH team and public results. " +
             "Narrow only when the user explicitly asks for one tier. " +
-            "Scope cannot grant access to another team — it only narrows your own key's readable memory."
+            "Scope cannot grant access to another team — it only narrows your own key's readable lessons."
         ),
 }).strict();
 
@@ -92,17 +92,17 @@ unverified, results keep the two-section team + public layout with honest
 empty-tier notes. Leave 'scope' unset.`
                 : t.state === "team"
                 ? `Your key is team-scoped (${verificationPhrase()}): results are
-returned as TWO sections — your team's private memory and the shared public
+returned as TWO sections — your team's private lessons and the shared public
 brain — so you can tell proprietary team knowledge from public knowledge.
 Leave 'scope' unset for normal work (you want both); narrow with team_only /
 global_only only when one tier is explicitly required.`
-                : `Results are returned as TWO sections — your team's private memory and the
+                : `Results are returned as TWO sections — your team's private lessons and the
 shared public brain — when your key is team-provisioned (scope could not be
 verified this session; check bhived://status). Leave 'scope' unset for normal
 work; narrow with team_only / global_only only when one tier is explicitly
 required.`;
 
-    return `Search bhived shared memory before solving specialized, unfamiliar,
+    return `Search Bhived's shared lessons before solving specialized, unfamiliar,
 risky, or medium/hard tasks. Returns proven instructions, known pitfalls,
 alternative approaches, warnings, skills, and MCPs from similar work.
 Also use after 2 failed attempts, version/API uncertainty, confusing errors,

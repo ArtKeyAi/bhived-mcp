@@ -1,7 +1,7 @@
 /**
  * Global instructions bootstrapper.
  *
- * Writes the compact bhived Memory Protocol block into each supported agent's
+ * Writes the compact bhived Network Protocol block into each supported agent's
  * USER-GLOBAL instructions file — the file the agent auto-loads for every
  * session across all projects — instead of the currently-opened workspace.
  *
@@ -92,15 +92,15 @@ export function bhivedVersion(): string {
 /** Scope-specific line telling agents what THIS key reads and where writes land. */
 const SCOPE_LINES: Record<InstructionScope, string> = {
   team:
-    "- Your API key is **team-scoped**: `bhived_query` reads your team's private memory + the shared public brain (returned as separate sections), and writes land in your **team's private memory** — not the global public brain. Use `scope` (`team_only`/`global_only`) on `bhived_query` to narrow reads.",
+    "- Your API key is **team-scoped**: `bhived_query` reads your team's private lessons + the shared public brain (returned as separate sections), and writes land in your **team's private lessons** — not the global public brain. Use `scope` (`team_only`/`global_only`) on `bhived_query` to narrow reads.",
   personal:
     "- Your API key is **personal**: reads and writes use the **global public brain** only — there is no private team tier on this key, so never write anything confidential or team-internal. `scope: team_only` on `bhived_query` returns nothing; leave `scope` unset.",
   unknown:
-    "- Your API key sets your scope: a team key reads team + public and **writes land in your team's private memory** (not the public brain); a personal key reads/writes the global public brain only. Use `scope` (`team_only`/`global_only`) on `bhived_query` to narrow.",
+    "- Your API key sets your scope: a team key reads team + public lessons and **writes land in your team's private lessons** (not the public brain); a personal key reads/writes the global public brain only. Use `scope` (`team_only`/`global_only`) on `bhived_query` to narrow.",
 };
 
 /**
- * The bhived Memory Protocol, wrapped in idempotent start/end/version/scope
+ * The bhived Network Protocol, wrapped in idempotent start/end/version/scope
  * markers. `scope` should be the key's verified scope when known — the CLI and
  * the MCP server re-verify it via GET /v1/subscription and rewrite this block
  * when it changes.
@@ -112,9 +112,9 @@ export function bhivedInstructionsBlock(
   return `${BHIVED_START}
 ${VERSION_PREFIX} ${version} ${VERSION_SUFFIX}
 ${SCOPE_PREFIX} ${scope} ${SCOPE_SUFFIX}
-# bhived Memory Protocol
+# bhived Network Protocol
 
-bhived is shared memory for AI agents. Before solving specialized, unfamiliar, risky, or medium/hard work, query bhived first instead of guessing.
+Bhived is a shared lesson network for AI agents. Before solving specialized, unfamiliar, risky, or medium/hard work, query Bhived first instead of guessing.
 
 ## Use bhived
 
@@ -132,10 +132,10 @@ ${SCOPE_LINES[scope]}
 - If the user corrected you and they were right, write the corrected lesson with \`query_id\` and mention what was wrong before.
 - Use the **same key** for the query and the follow-up write — a \`query_id\` from a different tenant/hive is not linked.
 - Use \`bhived_write_instruction\` for what worked, \`bhived_write_mistake\` for dead ends/errors, and \`bhived_write_update\` for factual/version changes.
-- Keep writes under ~350 words, name concrete packages/APIs/versions, and quote error messages verbatim.
+- Keep lessons under ~350 words, name concrete packages/APIs/versions, and quote error messages verbatim.
 - Do not write for trivial tasks, unverified guesses, secrets, credentials, private URLs, or user/customer data.
 
-## Write Format
+## Lesson Format
 
 Use concise, searchable text. For instructions:
 

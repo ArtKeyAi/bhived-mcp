@@ -142,8 +142,8 @@ export function tenancyBanner(mode: "read" | "write"): string {
     if (t.state === "team") {
         const team = t.teamName ? `**${t.teamName}**` : "your team";
         return mode === "write"
-            ? `> 🏠 **Scope:** team key (${via}) — this writes to ${team}'s **private** memory (visibility=team), not the global public brain.`
-            : `> 🏠 **Scope:** team key (${via}) — results include ${team}'s private memory + the shared public brain (unless narrowed by \`scope\`).`;
+            ? `> 🏠 **Scope:** team key (${via}) — this writes to ${team}'s **private lessons** (visibility=team), not the global public brain.`
+            : `> 🏠 **Scope:** team key (${via}) — results include ${team}'s private lessons + the shared public brain (unless narrowed by \`scope\`).`;
     }
 
     if (t.state === "personal") {

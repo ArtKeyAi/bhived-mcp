@@ -6,7 +6,6 @@
  * discovers its tools, and returns usage instructions.
  */
 
-import { z } from "zod/v4";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { restClient } from "../client/restClient.js";
 import { childMcpRegistry } from "../registries/childMcpRegistry.js";
@@ -14,27 +13,28 @@ import { childMcpManager } from "../childMcp/manager.js";
 import type { ChildMcpTool } from "../registries/childMcpRegistry.js";
 import { config } from "../config.js";
 import type { ActivationResponse } from "../client/types.js";
+import {
+    BhivedIdInputSchema,
+    resolveBhivedId,
+    type BhivedIdInput,
+} from "./bhivedId.js";
 
 // ── Input Schema ─────────────────────────────────────────────────
 
-const InitiateMcpInputSchema = z.object({
-    memory_id: z
-        .string()
-        .min(1)
-        .describe("The bhived MCP memory/capability ID to activate."),
-}).strict();
-
-type InitiateMcpInput = z.infer<typeof InitiateMcpInputSchema>;
+const InitiateMcpInputSchema = BhivedIdInputSchema;
+type InitiateMcpInput = BhivedIdInput;
 
 // ── Tool Description ─────────────────────────────────────────────
 
-const INITIATE_MCP_DESCRIPTION = `Activate and spawn an MCP server from bhived shared memory.
+const INITIATE_MCP_DESCRIPTION = `Activate and spawn an MCP server discovered through Bhived.
 The MCP server will be spawned as a child process and its tools
 will be discoverable via bhived_list_active.
 
 Use bhived_use_tool to call the spawned MCP's tools.
 
-Example: bhived_initiate_mcp(memory_id="mem_ghi789")`;
+Pass bhived_id. The deprecated memory_id alias is accepted for compatibility.
+
+Example: bhived_initiate_mcp(bhived_id="mem_ghi789")`;
 
 // ── Registration ─────────────────────────────────────────────────
 
@@ -53,6 +53,7 @@ export function registerInitiateMcpTool(server: McpServer): void {
             },
         },
         async (params: InitiateMcpInput) => {
+            const bhivedId = resolveBhivedId(params);
             let activation: ActivationResponse | undefined;
             try {
                 // 1. Check standalone MCP limit
@@ -91,7 +92,7 @@ export function registerInitiateMcpTool(server: McpServer): void {
                 }
 
                 // 3. Call backend to activate and get the payload
-                activation = await restClient.activateCapability(params.memory_id);
+                activation = await restClient.activateCapability(bhivedId);
 
                 // 4. Validate response
                 if (!activation.ok) {
@@ -99,7 +100,7 @@ export function registerInitiateMcpTool(server: McpServer): void {
                         content: [
                             {
                                 type: "text" as const,
-                                text: `❌ Backend declined activation for memory '${params.memory_id}'.`,
+                                text: `❌ Backend declined activation for Bhived item '${bhivedId}'.`,
                             },
                         ],
                         isError: true,
@@ -112,7 +113,7 @@ export function registerInitiateMcpTool(server: McpServer): void {
                             {
                                 type: "text" as const,
                                 text:
-                                    `❌ Memory '${params.memory_id}' is a **${activation.capability_type}**, not an MCP. ` +
+                                    `❌ Bhived item '${bhivedId}' is a **${activation.capability_type}**, not an MCP. ` +
                                     `Use \`bhived_initiate_skill\` instead.`,
                             },
                         ],
@@ -170,13 +171,13 @@ export function registerInitiateMcpTool(server: McpServer): void {
                     payload,
                     {
                         source: "standalone",
-                        memory_id: params.memory_id,
+                        memory_id: bhivedId,
                     }
                 );
 
                 // 7. Fire-and-forget activation tracking
                 restClient
-                    .reportCapability(params.memory_id, {
+                    .reportCapability(bhivedId, {
                         success: true,
                     })
                     .catch((err: unknown) => {
@@ -207,7 +208,7 @@ export function registerInitiateMcpTool(server: McpServer): void {
                             {
                                 type: "text" as const,
                                 text:
-                                    `❌ MCP '${params.memory_id}' is not available to this API key/tenant. ` +
+                                    `❌ MCP '${bhivedId}' is not available to this API key/tenant. ` +
                                     `Capabilities outside your readable hives return 404 (treated as nonexistent, ` +
                                     `not "forbidden"). Don't assume an ID seen under another key/team is activatable here — ` +
                                     `query with this key (or use bhived_list_active) to see which capabilities you can use.`,

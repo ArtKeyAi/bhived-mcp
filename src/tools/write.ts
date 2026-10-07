@@ -22,9 +22,9 @@ const BaseWriteSchema = z.object({
         .string()
         .min(1, "Text must not be empty")
         .describe(
-            "The memory content. Aim under ~350 words — content past ~512 tokens is never semantically indexed. " +
+            "The reusable lesson content. Aim under ~350 words — content past ~512 tokens is never semantically indexed. " +
             "Front-load stack, versions, and exact error text. Name concrete packages/APIs/versions — " +
-            "a memory with no recognizable entities is invisible to graph retrieval and can never be corroborated."
+            "a lesson with no recognizable entities is invisible to graph retrieval and can never be corroborated."
         ),
     title: z
         .string()
@@ -54,14 +54,14 @@ const InstructionSchema = BaseWriteSchema.extend({
         .string()
         .optional()
         .describe(
-            "ID of a memory this replaces. Use when you found a better approach than an existing instruction."
+            "Bhived ID of a lesson this replaces. Use when you found a better approach than an existing instruction."
         ),
     action: z
         .enum(["new", "update"])
         .default("new")
         .describe(
             "Use 'update' with supersedes_id ONLY when correcting your own previous instruction — " +
-            "this is also the only combination that bypasses the near-duplicate check (and only on memories you authored)."
+            "this is also the only combination that bypasses the near-duplicate check (and only on lessons you authored)."
         ),
 }).strict();
 
@@ -77,7 +77,7 @@ const UpdateSchema = BaseWriteSchema.extend({
         .default("new")
         .describe(
             "Use 'update' with supersedes_id ONLY when correcting your own previous update — " +
-            "this is the only combination that revises an existing memory in place (and only on memories you authored)."
+            "this is the only combination that revises an existing lesson in place (and only on lessons you authored)."
         ),
 }).strict();
 
@@ -88,15 +88,15 @@ type UpdateInput = z.infer<typeof UpdateSchema>;
 // ── Output schema ────────────────────────────────────────────────
 
 const WriteOutputSchema = z.object({
-    memory_id: z.string(),
+    bhived_id: z.string(),
     action_performed: z.enum([
         "created",
         "updated",
         "superseded",
         // A different-author near-duplicate the hive routed to the trust layer:
-        // "corroborated" = your write reinforced an existing memory (no new
-        // node — memory_id is that existing memory); "contradicted" = your
-        // dissenting memory was recorded and now contradicts the near-match.
+        // "corroborated" = your write reinforced an existing lesson (no new
+        // node — bhived_id is that existing lesson); "contradicted" = your
+        // dissenting lesson was recorded and now contradicts the near-match.
         "corroborated",
         "contradicted",
     ]),
@@ -129,10 +129,10 @@ function whereItLandsNote(): string {
 would silently land in the GLOBAL PUBLIC BRAIN. Check bhived://status before
 writing team-internal content.`;
         return `📍 Where it lands: your key is team-provisioned (${verificationPhrase()}) —
-this contributes to your team's PRIVATE memory (visibility=team), NOT the
+this contributes to your team's PRIVATE lessons (visibility=team), NOT the
 global public brain, and is not visible to other teams. You cannot target
 another hive or force a team write to be public, and public promotion of team
-memory is not available yet.${staleCaution}`;
+lessons is not available yet.${staleCaution}`;
     }
     if (t.state === "personal") {
         return `📍 Where it lands: your key is personal (plan: ${t.plan}, ${verificationPhrase()}) —
@@ -141,15 +141,15 @@ private tier on this key.`;
     }
     return `📍 Where it lands: your API key decides the destination server-side (scope
 could not be verified this session — check bhived://status). With a
-team-provisioned key this contributes to your team's PRIVATE memory
+team-provisioned key this contributes to your team's PRIVATE lessons
 (visibility=team) — NOT the global public brain, and not visible to other teams.
 With a non-team key it goes to the public brain. You cannot target another hive
-or force a team write to be public, and public promotion of team memory is not
+or force a team write to be public, and public promotion of team lessons is not
 available yet.`;
 }
 
 function instructionDescription(): string {
-    return `Share a verified working approach in bhived shared memory.
+    return `Share a verified working approach as a reusable Bhived lesson.
 Use only after verified useful learning: a non-obvious fix, better approach
 than prior results, reusable implementation pattern, or a correct user
 correction. Include query_id from bhived_query whenever possible.
@@ -235,7 +235,7 @@ async function handleWrite(
         // Structured output for programmatic clients
         // Use defaults for optional fields to prevent schema validation errors
         const structured = {
-            memory_id: result.memory_id,
+            bhived_id: result.memory_id,
             action_performed: result.action_performed,
             entities_created: result.entities_created ?? 0,
             entities_merged: result.entities_merged ?? 0,

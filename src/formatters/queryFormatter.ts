@@ -13,7 +13,7 @@
  * "Recommended Skills" / "Recommended MCPs" sections that display only the
  * description, resources, and activation ID.
  *
- * Results are split into two tiers — "Your Team's Memory" (team-private) and
+ * Results are split into two tiers — "Your Team's Lessons" (team-private) and
  * "Shared Public Brain" (public) — so agents can tell proprietary team
  * knowledge from public knowledge.
  */
@@ -41,7 +41,7 @@ function trimTextForReadability(text: string, maxWords: number, memId: string | 
     const truncated = words.slice(0, maxWords).join(" ");
     let notice = `\n\n> ✂️ **Note:** Text truncated (${words.length} words).`;
     if (memId) {
-        notice += ` Use \`bhived_inspect(memory_id="${memId}")\` to read the full text.`;
+        notice += ` Use \`bhived_inspect(bhived_id="${memId}")\` to read the full text.`;
     }
     return `${truncated}...${notice}`;
 }
@@ -91,11 +91,11 @@ export function formatQueryResultV2(result: ReadResultV2, scope?: ReadScope): st
     // unverified; a confirmed team key would contradict its own banner above.
     const teamEmptyMsg =
         scope === "global_only"
-            ? "*Team memory skipped — this query was scoped to `global_only`. Your team hive was not searched.*"
+            ? "*Team lessons skipped — this query was scoped to `global_only`. Your team hive was not searched.*"
             : getTenancy().state === "team"
-            ? "*No team-private memories matched this query.* Your team hive has nothing on this topic yet — " +
+            ? "*No team-private lessons matched this query.* Your team hive has nothing on this topic yet — " +
               "this is not a global fallback (public results are shown separately below)."
-            : "*No team-private memories matched this query.* If you expected team results, either your team hive " +
+            : "*No team-private lessons matched this query.* If you expected team results, either your team hive " +
               "has nothing on this topic yet, or your key is not provisioned as a team key (it would silently read " +
               "public-only — check `bhived://status`, which re-verifies scope via `GET /v1/subscription`). " +
               "This is not a global fallback — team and public are shown separately below.";
@@ -105,11 +105,11 @@ export function formatQueryResultV2(result: ReadResultV2, scope?: ReadScope): st
             ? "*Public brain skipped — this query was scoped to `team_only`. Nothing public was searched (no fallback).*"
             : // No score floor exists server-side, so an empty public tier is
               // rarely caused by query wording — say what it usually means.
-              "*No public memories matched this query.* This is unusual against the public brain — " +
+              "*No public lessons matched this query.* This is unusual against the public brain — " +
               "a retrieval channel may have failed; retry once before concluding nothing exists.";
 
     // ── 🏠 Team tier ──
-    sections.push(`## 🏠 Your Team's Memory (${teamRecs.length} found)\n`);
+    sections.push(`## 🏠 Your Team's Lessons (${teamRecs.length} found)\n`);
     sections.push(
         ...renderTier(
             teamRecs,
@@ -166,7 +166,7 @@ function formatPublicOnly(result: ReadResultV2, publicRecs: QueryMemory[], scope
             result.public_disputed ?? [],
             result.public_episodes ?? [],
             result.public_failed_approaches ?? [],
-            "*No public memories matched this query.* This is unusual against the public brain — " +
+            "*No public lessons matched this query.* This is unusual against the public brain — " +
             "a retrieval channel may have failed; retry once before concluding nothing exists."
         )
     );
@@ -303,7 +303,7 @@ function renderQueryFooter(queryId: string): string[] {
     return [
         "---",
         `**query_id**: \`${queryId}\``,
-        "Next step: use relevant recommendations or activate matching skills/MCPs, then verify your result. If you learn something reusable or the user correction was right, write back with this query_id (using the SAME key) — a write-back without it cannot corroborate the memories that helped you; their trust scores only grow when you pass it back.",
+        "Next step: use relevant recommendations or activate matching skills/MCPs, then verify your result. If you learn something reusable or the user correction was right, write back with this query_id (using the SAME key) — a write-back without it cannot corroborate the lessons that helped you; their trust scores only grow when you pass it back.",
     ];
 }
 
@@ -326,7 +326,7 @@ function formatMemory(mem: QueryMemory, rank: number): string {
 
     // Header: rank, type badge, and title
     const title = mem.title ? `**${mem.title}**` : "_(untitled)_";
-    lines.push(`### ${rank}. [${mem.type ?? "memory"}] ${title}\n`);
+    lines.push(`### ${rank}. [${mem.type ?? "lesson"}] ${title}\n`);
 
     // Metadata line — compact key:value pairs
     const meta: string[] = [];
@@ -341,7 +341,7 @@ function formatMemory(mem: QueryMemory, rank: number): string {
         meta.push(`${mem.times_retrieved}× retrieved`);
     }
     if (memId !== "unknown") {
-        meta.push(`id: \`${memId}\``);
+        meta.push(`bhived_id: \`${memId}\``);
     }
     lines.push(`> ${meta.join(" · ")}\n`);
 
@@ -361,7 +361,7 @@ function formatMemory(mem: QueryMemory, rank: number): string {
 function formatRecommendedSkills(skills: QueryMemory[]): string {
     const lines: string[] = [];
     lines.push("## 🔧 Recommended Skills\n");
-    lines.push("> Activate a skill with `bhived_initiate_skill(memory_id)` to load its instructions, scripts, and resources.");
+    lines.push("> Activate a skill with `bhived_initiate_skill(bhived_id)` to load its instructions, scripts, and resources.");
     lines.push("> Results often contain near-duplicate capabilities — activate at most ONE that best matches your task.\n");
 
     const shown = skills.slice(0, MAX_SKILLS_SHOWN);
@@ -405,7 +405,7 @@ function formatRecommendedSkills(skills: QueryMemory[]): string {
         }
 
         // Activation ID — the key piece
-        lines.push(`🆔 **Activate:** \`memory_id="${memId}"\`\n`);
+        lines.push(`🆔 **Activate:** \`bhived_id="${memId}"\`\n`);
     });
 
     if (skills.length > MAX_SKILLS_SHOWN) {
@@ -424,7 +424,7 @@ function formatRecommendedSkills(skills: QueryMemory[]): string {
 function formatRecommendedMcps(mcps: QueryMemory[]): string {
     const lines: string[] = [];
     lines.push("## 🔌 Recommended MCPs\n");
-    lines.push("> Activate an MCP with `bhived_initiate_mcp(memory_id)` to spawn it and use its tools.");
+    lines.push("> Activate an MCP with `bhived_initiate_mcp(bhived_id)` to spawn it and use its tools.");
     lines.push("> Results often contain near-duplicate capabilities — activate at most ONE that best matches your task.\n");
 
     const shown = mcps.slice(0, MAX_MCPS_SHOWN);
@@ -458,7 +458,7 @@ function formatRecommendedMcps(mcps: QueryMemory[]): string {
         }
 
         // Activation ID — the key piece
-        lines.push(`🆔 **Activate:** \`memory_id="${memId}"\`\n`);
+        lines.push(`🆔 **Activate:** \`bhived_id="${memId}"\`\n`);
     });
 
     if (mcps.length > MAX_MCPS_SHOWN) {
@@ -476,7 +476,7 @@ function formatWarning(w: QueryWarning): string {
 
     lines.push(`- **[${w.type}]** ${title} (confidence: ${w.confidence?.toFixed(2) ?? "N/A"})`);
     if (w.contradicts_memory_id) {
-        lines.push(`  contradicts: \`${w.contradicts_memory_id}\``);
+        lines.push(`  contradicts bhived_id: \`${w.contradicts_memory_id}\``);
     }
     const content = w.text ? trimTextForReadability(w.text, MAX_WORDS_SHOWN) : "";
     lines.push(`  ${content}\n`);
@@ -499,7 +499,7 @@ function formatDisputed(pair: DisputedPair): string {
 
     const lines: string[] = [];
     lines.push(`- **${disputeType}**${conf}`);
-    lines.push(`  - A: "${snippet(aText)}" (\`${aId}\`)`);
-    lines.push(`  - B: "${snippet(bText)}" (\`${bId}\`)\n`);
+    lines.push(`  - A: "${snippet(aText)}" (bhived_id: \`${aId}\`)`);
+    lines.push(`  - B: "${snippet(bText)}" (bhived_id: \`${bId}\`)\n`);
     return lines.join("\n");
 }

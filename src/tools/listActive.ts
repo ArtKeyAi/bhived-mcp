@@ -68,7 +68,7 @@ export function registerListActiveTool(server: McpServer): void {
                             skillSection += `### ${skill.name}\n`;
                             skillSection += `- **Status**: ${skill.status === "active" ? "✅ Active" : "⚠️ Error"}\n`;
                             skillSection += `- **Activated**: ${skill.activated_at.toISOString()}\n`;
-                            skillSection += `- **Memory ID**: \`${skill.memory_id}\`\n`;
+                            skillSection += `- **Bhived ID**: \`${skill.memory_id}\`\n`;
                             skillSection += `- **Resources**: ${scriptCount} scripts, ${refCount} references, ${assetCount} assets\n`;
 
                             if (scriptCount > 0) {
