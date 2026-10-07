@@ -3,7 +3,8 @@
  *
  * Thin fetch-based client for the Bhived FastAPI core.
  * Uses native fetch (Node 18+) with AbortController timeouts
- * and single-retry for transient failures.
+ * and single-retry for transient failures. Writes carry an
+ * Idempotency-Key and follow their own retry policy (writeMemory).
  */
 
 import { config } from "../config.js";
@@ -12,6 +13,7 @@ import type {
     ReadResultV2,
     WriteParams,
     WriteResult,
+    WriteOutcome,
     MemoryDetail,
     HealthStatus,
     SubscriptionStatus,
@@ -21,6 +23,57 @@ import type {
     CapabilityReportParams,
     AdminCapabilityReadResponse,
 } from "./types.js";
+
+// ── Write retry policy ──────────────────────────────────────────────
+// Overall budget for one write, polling included (the server's own write
+// timeout is 110s).
+const WRITE_DEADLINE_MS = 150_000;
+// Never start an attempt with less than this left of the deadline.
+const MIN_WRITE_ATTEMPT_MS = 1_000;
+// 409 write_in_progress without a usable Retry-After.
+const DEFAULT_POLL_WAIT_MS = 5_000;
+const MAX_POLL_WAIT_MS = 30_000;
+// Guards against a `Retry-After: 0` turning polling into a tight loop.
+const MIN_POLL_WAIT_MS = 250;
+
+/**
+ * A write whose outcome the client cannot know: it timed out, lost the
+ * connection, got a 5xx after its one retry, or was still running on the
+ * server when the write deadline passed. The lesson may have been saved.
+ * Deliberately carries no `statusCode`, so it is never mistaken for a
+ * definitive HTTP answer such as the 409 duplicate rejection.
+ */
+export class WriteOutcomeUnknownError extends Error {
+    constructor(
+        message: string,
+        readonly reason: "timeout" | "network" | "server_error" | "in_progress"
+    ) {
+        super(message);
+        this.name = "WriteOutcomeUnknownError";
+    }
+}
+
+/**
+ * The `error` code of a REST error body: `{"detail": {"error": code}}`
+ * (FastAPI), `{"error": code}` or `{"detail": "code"}`. Undefined when the
+ * error carries no parseable body.
+ */
+export function apiErrorCode(error: unknown): string | undefined {
+    const body = (error as { body?: string }).body;
+    if (!body) return undefined;
+    try {
+        const parsed = JSON.parse(body) as Record<string, unknown>;
+        const detail = parsed.detail;
+        if (typeof detail === "string") return detail;
+        if (detail && typeof detail === "object") {
+            const code = (detail as Record<string, unknown>).error;
+            if (typeof code === "string") return code;
+        }
+        return typeof parsed.error === "string" ? parsed.error : undefined;
+    } catch {
+        return undefined;
+    }
+}
 
 export class BhivedRestClient {
     private readonly baseUrl: string;
@@ -44,8 +97,33 @@ export class BhivedRestClient {
         return this.post<ReadResultV2>("/v2/query", params);
     }
 
-    async writeMemory(params: WriteParams): Promise<WriteResult> {
-        return this.post<WriteResult>("/v1/memories", params);
+    /**
+     * POST /v1/memories. Send the SAME `idempotencyKey` for every attempt of
+     * one logical write: the server then never writes it twice, replays the
+     * finished result (`Idempotency-Replayed: true` → `replayed`), and answers
+     * 409 `write_in_progress` while the first attempt still runs. Without a
+     * key the write is never retried — a backend that ignores the header
+     * would save a second copy.
+     */
+    async writeMemory(params: WriteParams, idempotencyKey?: string): Promise<WriteOutcome> {
+        this.assertAuthenticated();
+        const headers = this.buildHeaders("application/json");
+        if (idempotencyKey) {
+            headers["Idempotency-Key"] = idempotencyKey;
+        }
+        const body = JSON.stringify(params);
+
+        return this.writeWithRetry(async (signal) => {
+            const response = await fetch(`${this.baseUrl}/v1/memories`, {
+                method: "POST",
+                headers,
+                body,
+                signal,
+            });
+            const result = await this.handleResponse<WriteResult>(response);
+            const replayed = response.headers.get("idempotency-replayed")?.trim().toLowerCase() === "true";
+            return { result, replayed };
+        }, Boolean(idempotencyKey));
     }
 
     async getMemory(memoryId: string): Promise<MemoryDetail> {
@@ -169,9 +247,11 @@ export class BhivedRestClient {
             const err = new Error(`REST API error (${response.status}): ${message}`) as Error & {
                 statusCode: number;
                 body: string;
+                retryAfter: string | null;
             };
             err.statusCode = response.status;
             err.body = errorBody;
+            err.retryAfter = response.headers.get("retry-after");
             throw err;
         }
         return (await response.json()) as T;
@@ -220,6 +300,113 @@ export class BhivedRestClient {
                 clearTimeout(timeoutId);
             }
         }
+    }
+
+    /**
+     * Retry policy for POST /v1/memories:
+     *  - timeout, network error or 5xx: ONE retry, and only with an
+     *    Idempotency-Key. A backend that predates idempotency ignores the
+     *    header, so every further retry could save another copy.
+     *  - 409 write_in_progress (an earlier attempt with this key still runs):
+     *    wait for Retry-After and poll with the same key until the overall
+     *    write deadline.
+     * Ending on a timeout, network error, 5xx or a still-running write throws
+     * WriteOutcomeUnknownError; every other error is a definitive answer.
+     */
+    private async writeWithRetry<T>(
+        fn: (signal: AbortSignal) => Promise<T>,
+        keyed: boolean
+    ): Promise<T> {
+        const deadline = Date.now() + WRITE_DEADLINE_MS;
+        let transientRetried = false;
+
+        for (;;) {
+            const remaining = deadline - Date.now();
+            const controller = new AbortController();
+            const timeoutId = setTimeout(
+                () => controller.abort(),
+                Math.min(this.timeout, Math.max(remaining, MIN_WRITE_ATTEMPT_MS))
+            );
+
+            let delay: number;
+            try {
+                return await fn(controller.signal);
+            } catch (error: unknown) {
+                if (keyed && this.isWriteInProgress(error)) {
+                    delay = this.retryAfterMs(error);
+                } else if (keyed && !transientRetried && this.isRetryableError(error)) {
+                    transientRetried = true;
+                    delay = 500;
+                } else {
+                    throw this.isRetryableError(error) || this.isWriteInProgress(error)
+                        ? this.writeOutcomeUnknown(error)
+                        : this.normalizeError(error);
+                }
+
+                if (Date.now() + delay + MIN_WRITE_ATTEMPT_MS > deadline) {
+                    throw this.writeOutcomeUnknown(error);
+                }
+            } finally {
+                clearTimeout(timeoutId);
+            }
+            await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+    }
+
+    /** 409 `write_in_progress`: an earlier attempt with this Idempotency-Key is still running. */
+    private isWriteInProgress(error: unknown): boolean {
+        const statusCode = (error as { statusCode?: number }).statusCode;
+        return statusCode === 409 && apiErrorCode(error) === "write_in_progress";
+    }
+
+    /**
+     * How long to wait before polling a write in progress: the Retry-After
+     * header (seconds or an HTTP date), else the body's `retry_after_seconds`,
+     * else 5s. Each wait is capped at 30s.
+     */
+    private retryAfterMs(error: unknown): number {
+        let seconds: number | undefined;
+
+        const header = (error as { retryAfter?: string | null }).retryAfter?.trim();
+        if (header) {
+            if (/^\d+(\.\d+)?$/.test(header)) {
+                seconds = Number(header);
+            } else if (Number.isFinite(Date.parse(header))) {
+                seconds = (Date.parse(header) - Date.now()) / 1000;
+            }
+        }
+
+        if (seconds === undefined) {
+            try {
+                const parsed = JSON.parse((error as { body?: string }).body ?? "") as Record<string, unknown>;
+                const detail = parsed.detail as Record<string, unknown> | undefined;
+                const fromBody = detail?.retry_after_seconds ?? parsed.retry_after_seconds;
+                if (typeof fromBody === "number" && Number.isFinite(fromBody)) seconds = fromBody;
+            } catch {
+                // no usable body — fall back to the default below
+            }
+        }
+
+        const ms = seconds === undefined ? DEFAULT_POLL_WAIT_MS : seconds * 1000;
+        return Math.min(Math.max(ms, MIN_POLL_WAIT_MS), MAX_POLL_WAIT_MS);
+    }
+
+    private writeOutcomeUnknown(error: unknown): WriteOutcomeUnknownError {
+        if (this.isWriteInProgress(error)) {
+            return new WriteOutcomeUnknownError(
+                `The server was still processing this write after ${WRITE_DEADLINE_MS / 1000}s.`,
+                "in_progress"
+            );
+        }
+        const message = this.normalizeError(error).message;
+        if (error instanceof DOMException && error.name === "AbortError") {
+            return new WriteOutcomeUnknownError(message, "timeout");
+        }
+        const statusCode = (error as { statusCode?: number }).statusCode;
+        return new WriteOutcomeUnknownError(
+            message,
+            statusCode !== undefined ? "server_error" : "network"
+        );
     }
 
     private isRetryableError(error: unknown): boolean {

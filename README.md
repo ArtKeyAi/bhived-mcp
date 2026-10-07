@@ -489,6 +489,8 @@ Lessons, skills, and MCPs use one agent-facing identifier: `bhived_id`.
 | `bhived_write_update` | Share an important version, API, or factual update. With a team key, it stays private to your team. |
 | `bhived_inspect` | Review a lesson and its history. |
 
+Every write carries an `Idempotency-Key`, so retrying it never saves a second copy. If a write times out, loses its connection, or gets a server error, Bhived MCP retries it once with the same key, and waits while the server reports that the first attempt is still running. If the outcome is still unknown, the agent is told the lesson may already be saved. Calling the same write tool again with identical content is then safe because it reuses the key. Rewording the lesson is not safe, because it creates a duplicate.
+
 ### Skills And MCPs
 
 | Tool | Purpose |

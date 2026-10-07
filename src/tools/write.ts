@@ -5,12 +5,15 @@
  * but with different `type` values set automatically.
  */
 
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod/v4";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { restClient } from "../client/restClient.js";
+import { restClient, apiErrorCode, WriteOutcomeUnknownError } from "../client/restClient.js";
 import {
     formatWriteResult,
     formatDuplicateError,
+    formatUnknownWriteOutcome,
+    formatIdempotencyError,
 } from "../formatters/writeFormatter.js";
 import type { WriteParams } from "../client/types.js";
 import { getTenancy, verificationPhrase } from "../tenancy.js";
@@ -217,6 +220,46 @@ ${PRIVACY_NOTE}
 ${HARDWARE_NOTE}`;
 }
 
+// ── Idempotency keys ─────────────────────────────────────────────
+// Each write tool call gets one Idempotency-Key, sent on every attempt. Until
+// the write resolves (success or a definitive rejection) its key stays here,
+// under a fingerprint of the payload, so an IDENTICAL call — a concurrent
+// duplicate, or the agent retrying after an unknown outcome — reuses it and
+// the server returns the first result instead of saving a second copy.
+// Process-wide rather than per McpServer: the HTTP transport builds a new
+// server for every request, and all of them share this process's API key.
+
+const unresolvedWriteKeys = new Map<string, string>();
+const MAX_UNRESOLVED_WRITE_KEYS = 100;
+
+function writeFingerprint(payload: WriteParams): string {
+    // Fixed order with explicit nulls: JSON.stringify drops undefined keys.
+    const canonical = JSON.stringify([
+        payload.type,
+        payload.title,
+        payload.text,
+        payload.query_id ?? null,
+        payload.supersedes_id ?? null,
+        payload.action ?? null,
+        payload.model ?? null,
+    ]);
+    return createHash("sha256").update(canonical).digest("hex");
+}
+
+function idempotencyKeyFor(fingerprint: string): string {
+    const existing = unresolvedWriteKeys.get(fingerprint);
+    if (existing) return existing;
+
+    const key = randomUUID();
+    unresolvedWriteKeys.set(fingerprint, key);
+    if (unresolvedWriteKeys.size > MAX_UNRESOLVED_WRITE_KEYS) {
+        // Maps iterate in insertion order: drop the oldest entry.
+        const oldest = unresolvedWriteKeys.keys().next().value;
+        if (oldest !== undefined) unresolvedWriteKeys.delete(oldest);
+    }
+    return key;
+}
+
 // ── Shared write handler (properly typed) ────────────────────────
 
 interface BaseWriteParams {
@@ -232,18 +275,23 @@ async function handleWrite(
     params: BaseWriteParams,
     memoryType: "instruction" | "mistake" | "update"
 ) {
-    try {
-        const writePayload: WriteParams = {
-            text: params.text,
-            title: params.title,
-            type: memoryType,
-            query_id: params.query_id,
-            supersedes_id: params.supersedes_id,
-            action: params.action,
-            model: params.model,
-        };
+    const writePayload: WriteParams = {
+        text: params.text,
+        title: params.title,
+        type: memoryType,
+        query_id: params.query_id,
+        supersedes_id: params.supersedes_id,
+        action: params.action,
+        model: params.model,
+    };
+    const fingerprint = writeFingerprint(writePayload);
 
-        const result = await restClient.writeMemory(writePayload);
+    try {
+        const { result, replayed } = await restClient.writeMemory(
+            writePayload,
+            idempotencyKeyFor(fingerprint)
+        );
+        unresolvedWriteKeys.delete(fingerprint);
 
         // Structured output for programmatic clients
         // Use defaults for optional fields to prevent schema validation errors
@@ -268,13 +316,38 @@ async function handleWrite(
                         result,
                         memoryType,
                         Boolean(params.query_id),
-                        params.supersedes_id
+                        params.supersedes_id,
+                        replayed
                     ),
                 },
             ],
             structuredContent: structured,
         };
     } catch (error: unknown) {
+        // The lesson may exist: keep the key so an identical retry reuses it.
+        if (error instanceof WriteOutcomeUnknownError) {
+            return {
+                content: [
+                    {
+                        type: "text" as const,
+                        text: formatUnknownWriteOutcome(memoryType, error.message),
+                    },
+                ],
+                isError: true,
+            };
+        }
+
+        // Every other failure is a definitive answer: nothing to resume.
+        unresolvedWriteKeys.delete(fingerprint);
+
+        const idempotencyMessage = formatIdempotencyError(memoryType, apiErrorCode(error));
+        if (idempotencyMessage) {
+            return {
+                content: [{ type: "text" as const, text: idempotencyMessage }],
+                isError: true,
+            };
+        }
+
         // Handle duplicate detection (409)
         if (isDuplicateError(error)) {
             const dupInfo = parseDuplicateInfo(error);

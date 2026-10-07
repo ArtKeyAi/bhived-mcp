@@ -243,6 +243,16 @@ export interface WriteResult {
     contradictions_created: number;
 }
 
+/**
+ * A successful write as the client saw it. `replayed` is true when the server
+ * answered with `Idempotency-Replayed: true`: an earlier attempt with the same
+ * Idempotency-Key had already saved this write, and nothing new was created.
+ */
+export interface WriteOutcome {
+    result: WriteResult;
+    replayed: boolean;
+}
+
 export interface DuplicateError {
     error: "duplicate_memory";
     duplicate_of: string;

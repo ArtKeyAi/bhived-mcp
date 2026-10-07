@@ -15,7 +15,8 @@ export function formatWriteResult(
     result: WriteResult,
     memoryType: string,
     queryIdProvided = false,
-    supersedesIdRequested?: string
+    supersedesIdRequested?: string,
+    replayed = false
 ): string {
     const lines: string[] = [];
 
@@ -30,6 +31,15 @@ export function formatWriteResult(
     lines.push(`- **type**: ${memoryType}`);
     lines.push(`- **bhived_id**: \`${result.memory_id}\``);
     lines.push(`- **action**: ${result.action_performed}`);
+
+    // The server matched this write's Idempotency-Key to an earlier attempt
+    // that had finished, and returned that attempt's result.
+    if (replayed) {
+        lines.push(
+            "- **note**: This write had already been saved by an earlier attempt — nothing new was created. " +
+            "The details below are from that save."
+        );
+    }
 
     // A near-duplicate of another author's lesson is routed to the trust layer
     // rather than rejected — make the non-obvious semantics explicit.
@@ -142,4 +152,37 @@ export function formatDuplicateError(
             "rewrite with distinct wording and its own context — a near-verbatim resubmission is rejected again.",
         "4. If identical, no action needed — the hive already knows this",
     ].join("\n");
+}
+
+/**
+ * A write that timed out, lost its connection, kept failing with 5xx, or was
+ * still running when the client gave up. The lesson may exist, so steer the
+ * agent away from rewording it (which would dodge the duplicate check) and
+ * toward an identical retry, which reuses the same Idempotency-Key.
+ */
+export function formatUnknownWriteOutcome(memoryType: string, cause: string): string {
+    return [
+        "# ⚠️ Write outcome unknown — it may still have been saved\n",
+        `- **cause**: ${cause}`,
+        "- Do NOT rewrite this lesson in different words: if it was saved, a reworded copy becomes a duplicate.",
+        `- Calling \`bhived_write_${memoryType}\` again with IDENTICAL content (same title, text, query_id, ` +
+            "supersedes_id, action and model) is safe: it reuses this write's idempotency key, so the lesson is " +
+            "saved at most once and you get the existing one back if this attempt went through.",
+    ].join("\n");
+}
+
+/**
+ * One-line messages for the 422 idempotency rejections. Null for any other
+ * error code. Neither rejection saved anything.
+ */
+export function formatIdempotencyError(memoryType: string, code: string | undefined): string | null {
+    if (code === "idempotency_key_reused") {
+        return `Error writing ${memoryType}: rejected (idempotency_key_reused) — this write's idempotency key was ` +
+            "already used for different content. Nothing was saved; calling the tool again sends a fresh key.";
+    }
+    if (code === "invalid_idempotency_key") {
+        return `Error writing ${memoryType}: rejected (invalid_idempotency_key) — the server refused the ` +
+            "idempotency key bhived-mcp generated. Nothing was saved; this is a bhived-mcp bug, so please report it.";
+    }
+    return null;
 }
