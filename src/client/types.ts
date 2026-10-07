@@ -70,8 +70,40 @@ export interface QueryMemory {
     mcp_meta?: McpCapabilityMeta;
 }
 
+/**
+ * A variable a capability needs from the user's machine. The live API sends
+ * `{name, description, required, secret, default}` on query metadata and on
+ * MCP activation payloads.
+ */
+export interface EnvRequirement {
+    name: string;
+    description?: string | null;
+    required?: boolean;
+    secret?: boolean;
+    default?: string | null;
+}
+
+/**
+ * An HTTP header a remote deployment of an MCP needs. Informational only: the
+ * client runs MCPs locally over stdio and the backend stores no remote URL.
+ */
+export type HeaderRequirement = EnvRequirement;
+
+/**
+ * Optional trust signals. Query metadata may not carry them yet; activation
+ * payloads carry them inside `metadata` (skills: `github_stars`, MCPs: `stars`).
+ */
+export interface CapabilityQualitySignals {
+    github_stars?: number;
+    stars?: number;
+    /** Audit vendor → verdict, e.g. `{ "Snyk": "Warn" }`. */
+    security_audits?: Record<string, string>;
+    /** Shape is not final (backend N9); a name or `{ name, verified }`. */
+    publisher?: string | { name?: string; verified?: boolean };
+}
+
 /** Metadata about a skill capability included in query results. */
-export interface SkillCapabilityMeta {
+export interface SkillCapabilityMeta extends CapabilityQualitySignals {
     name: string;
     description?: string;
     script_count?: number;
@@ -83,10 +115,12 @@ export interface SkillCapabilityMeta {
     /** Backend may report this instead of `usage_count`. */
     activation_count?: number;
     success_rate?: number;
+    env_requirements?: EnvRequirement[];
+    metadata?: Record<string, unknown>;
 }
 
 /** Metadata about an MCP capability included in query results. */
-export interface McpCapabilityMeta {
+export interface McpCapabilityMeta extends CapabilityQualitySignals {
     name: string;
     description?: string;
     tools_hint?: string[];
@@ -94,6 +128,9 @@ export interface McpCapabilityMeta {
     /** Backend may report this instead of `usage_count`. */
     activation_count?: number;
     success_rate?: number;
+    env_requirements?: EnvRequirement[];
+    header_requirements?: HeaderRequirement[];
+    metadata?: Record<string, unknown>;
 }
 
 export interface QueryEpisode {
@@ -281,12 +318,21 @@ export interface SkillPayload {
     metadata?: Record<string, unknown>;
 }
 
+/**
+ * Static `env` is admin-curated. The live API sends `[]` when there is none,
+ * so read it through `staticEnv()` rather than assuming a record.
+ */
+export type McpStaticEnv = Record<string, string> | unknown[];
+
 export interface McpConfig {
     name: string;
     description: string;
     command: string;
     args: string[];
-    env: Record<string, string>;
+    env?: McpStaticEnv;
+    /** Variables to pass through from the user's environment or secrets file. */
+    env_requirements?: EnvRequirement[];
+    header_requirements?: HeaderRequirement[];
 }
 
 export interface McpPayload {
@@ -294,7 +340,9 @@ export interface McpPayload {
     description: string;
     command: string;
     args: string[];
-    env: Record<string, string>;
+    env?: McpStaticEnv;
+    env_requirements?: EnvRequirement[];
+    header_requirements?: HeaderRequirement[];
     tools_hint: string[];
     prompts?: McpPromptHint[];
     compatibility?: Record<string, unknown>;

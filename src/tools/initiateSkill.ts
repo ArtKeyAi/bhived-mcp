@@ -14,6 +14,7 @@ import { restClient } from "../client/restClient.js";
 import { skillRegistry } from "../registries/skillRegistry.js";
 import { resourceRegistry, ResourceRegistry } from "../registries/resourceRegistry.js";
 import { childMcpManager } from "../childMcp/manager.js";
+import { ChildMcpPrerequisiteError, missingEnvHelp } from "../childMcp/env.js";
 import type { ChildMcpTool } from "../registries/childMcpRegistry.js";
 import type { McpConfig } from "../client/types.js";
 import { config } from "../config.js";
@@ -187,7 +188,10 @@ export function registerInitiateSkillTool(server: McpServer): void {
                         } catch (error: unknown) {
                             const msg = error instanceof Error ? error.message : String(error);
                             mcpErrors.push(
-                                `⚠️ Failed to spawn bundled MCP '${mcpConfig.name}': ${msg}`
+                                error instanceof ChildMcpPrerequisiteError
+                                    ? `⚠️ Bundled MCP '${mcpConfig.name}' not started — ${msg.replace(/\n/g, "; ")}. ` +
+                                      (error.missing.length > 0 ? missingEnvHelp() : "")
+                                    : `⚠️ Failed to spawn bundled MCP '${mcpConfig.name}': ${msg}`
                             );
                             console.error(
                                 `[initiateSkill] Failed to spawn bundled MCP '${mcpConfig.name}': ${msg}`

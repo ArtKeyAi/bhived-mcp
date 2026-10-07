@@ -28,6 +28,12 @@ import type {
     FailedApproach,
 } from "../client/types.js";
 import { tenancyBanner, getTenancy } from "../tenancy.js";
+import {
+    asRecord,
+    formatEnvRequirements,
+    formatHeaderRequirements,
+    formatQualitySignals,
+} from "./capabilityFormatter.js";
 
 // ── Max items for capability sections ────────────────────────────
 const MAX_SKILLS_SHOWN = 10;
@@ -391,6 +397,12 @@ function formatRecommendedSkills(skills: QueryMemory[]): string {
             lines.push(`📦 **Resources:** ${resources.join(" · ")}\n`);
         }
 
+        const requirements = formatEnvRequirements(sm.env_requirements);
+        if (requirements) lines.push(`${requirements}\n`);
+
+        const quality = formatQualitySignals(asRecord(sm), asRecord(sm.metadata));
+        if (quality) lines.push(`${quality}\n`);
+
         // Usage stats — only with real usage. The backend sends explicit zeros
         // for never-activated capabilities; rendering "used by 0 · success: 0%"
         // reads as evidence of failure when it's just absence of data.
@@ -445,6 +457,15 @@ function formatRecommendedMcps(mcps: QueryMemory[]): string {
         if (mm.tools_hint && mm.tools_hint.length > 0) {
             lines.push(`🔧 **Tools:** ${mm.tools_hint.join(", ")}\n`);
         }
+
+        // What this machine needs to run it — lets agents pick MCPs they can launch.
+        const requirements = formatEnvRequirements(mm.env_requirements);
+        if (requirements) lines.push(`${requirements}\n`);
+        const headers = formatHeaderRequirements(mm.header_requirements);
+        if (headers) lines.push(`${headers}\n`);
+
+        const quality = formatQualitySignals(asRecord(mm), asRecord(mm.metadata));
+        if (quality) lines.push(`${quality}\n`);
 
         // Usage stats — only with real usage (see skills note above).
         const stats: string[] = [];

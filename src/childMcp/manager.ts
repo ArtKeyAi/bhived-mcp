@@ -19,6 +19,13 @@ import {
 } from "../registries/childMcpRegistry.js";
 import type { McpConfig, McpPayload } from "../client/types.js";
 import { config } from "../config.js";
+import {
+    ChildMcpPrerequisiteError,
+    formatMissingEnv,
+    normalizeRequirements,
+    resolveChildEnv,
+    staticEnv,
+} from "./env.js";
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -82,6 +89,15 @@ export class ChildMcpManager {
             childMcpRegistry.remove(name);
         }
 
+        // 0. Pre-flight, outside the spawn-failure path: these describe this
+        //    machine, not a broken capability, so callers must not report them
+        //    as capability failures.
+        const { env: childEnv, missing } = resolveChildEnv(mcpConfig);
+        if (missing.length > 0) {
+            throw new ChildMcpPrerequisiteError(name, formatMissingEnv(missing), missing);
+        }
+        this.validateCommand(name, mcpConfig.command);
+
         let transport: StdioClientTransport | undefined;
         let client: Client | undefined;
 
@@ -89,11 +105,8 @@ export class ChildMcpManager {
         let stderrOutput = "";
 
         try {
-            // 0. Pre-flight: verify the command binary exists on the system
-            this.validateCommand(mcpConfig.command);
-
-            // ── Debug: log the exact spawn command ──
-            const mcpEnvKeys = Object.keys(mcpConfig.env || {});
+            // ── Debug: log the exact spawn command (env names only, never values) ──
+            const mcpEnvKeys = Object.keys(childEnv);
             console.error(
                 `[ChildMcpManager] Spawning '${name}':\n` +
                 `  command: ${mcpConfig.command}\n` +
@@ -103,13 +116,12 @@ export class ChildMcpManager {
             );
 
             // 1. Create the stdio transport with stderr piped for diagnostics.
-            //    The SDK merges safe default env vars with these MCP-specific overrides.
+            //    The SDK merges its safe default env vars (PATH, HOME, ...) with
+            //    exactly the variables this MCP declared — not the parent env.
             transport = new StdioClientTransport({
                 command: mcpConfig.command,
                 args: mcpConfig.args,
-                env: mcpConfig.env && Object.keys(mcpConfig.env).length > 0
-                    ? mcpConfig.env
-                    : undefined,
+                env: mcpEnvKeys.length > 0 ? childEnv : undefined,
                 stderr: "pipe",
             });
 
@@ -155,7 +167,9 @@ export class ChildMcpManager {
                     description: mcpConfig.description,
                     command: mcpConfig.command,
                     args: mcpConfig.args,
-                    env: mcpConfig.env,
+                    // Keep resolved user secrets out of the registry.
+                    env: staticEnv(mcpConfig.env),
+                    env_requirements: normalizeRequirements(mcpConfig.env_requirements),
                 },
                 source: options.source,
                 memory_id: options.memory_id,
@@ -485,7 +499,7 @@ export class ChildMcpManager {
      * Validate that the command binary exists on the system.
      * Throws with an actionable error message if not found.
      */
-    private validateCommand(command: string): void {
+    private validateCommand(mcpName: string, command: string): void {
         // Skip validation for absolute paths (they either exist or spawn will fail clearly)
         if (command.includes("/") || command.includes("\\")) return;
 
@@ -500,7 +514,8 @@ export class ChildMcpManager {
                 docker: "Install Docker: https://docs.docker.com/get-docker/",
             };
             const hint = installHints[command] ?? `Ensure '${command}' is installed and in your PATH.`;
-            throw new Error(
+            throw new ChildMcpPrerequisiteError(
+                mcpName,
                 `Command '${command}' not found on this system. ${hint}`
             );
         }

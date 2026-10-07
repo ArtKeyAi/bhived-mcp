@@ -12,7 +12,18 @@ import { childMcpRegistry } from "../registries/childMcpRegistry.js";
 import { childMcpManager } from "../childMcp/manager.js";
 import type { ChildMcpTool } from "../registries/childMcpRegistry.js";
 import { config } from "../config.js";
-import type { ActivationResponse } from "../client/types.js";
+import type { ActivationResponse, McpPayload } from "../client/types.js";
+import {
+    ChildMcpPrerequisiteError,
+    missingEnvHelp,
+    normalizeRequirements,
+} from "../childMcp/env.js";
+import {
+    asRecord,
+    formatEnvRequirements,
+    formatHeaderRequirements,
+    formatQualitySignals,
+} from "../formatters/capabilityFormatter.js";
 import {
     BhivedIdInputSchema,
     resolveBhivedId,
@@ -31,6 +42,11 @@ The MCP server will be spawned as a child process and its tools
 will be discoverable via bhived_list_active.
 
 Use bhived_use_tool to call the spawned MCP's tools.
+
+Some MCPs need API keys (shown as "Requires" in bhived_query results). Only the
+declared variables are passed to the child, read from this server's environment
+or ~/.bhived/secrets.json. If a required one is missing the MCP is not launched
+and the result names the missing variable — prefer an MCP you can run.
 
 Pass bhived_id. The deprecated memory_id alias is accepted for compatibility.
 
@@ -141,7 +157,7 @@ export function registerInitiateMcpTool(server: McpServer): void {
                     `[initiateMcp] Payload received for '${mcpName}':\n` +
                     `  command: ${payload.command}\n` +
                     `  args: ${JSON.stringify(payload.args)}\n` +
-                    `  env: ${JSON.stringify(Object.keys(payload.env || {}))}\n` +
+                    `  env requirements: ${JSON.stringify(normalizeRequirements(payload.env_requirements).map((r) => r.name))}\n` +
                     `  tools_hint: ${JSON.stringify(payload.tools_hint)}`
                 );
 
@@ -153,12 +169,7 @@ export function registerInitiateMcpTool(server: McpServer): void {
                             content: [
                                 {
                                     type: "text" as const,
-                                    text: formatMcpOutput(
-                                        mcpName,
-                                        payload.description,
-                                        existing.tools,
-                                        true
-                                    ),
+                                    text: formatMcpOutput(payload, existing.tools, true),
                                 },
                             ],
                         };
@@ -166,14 +177,28 @@ export function registerInitiateMcpTool(server: McpServer): void {
                     // If crashed, we'll respawn below (manager handles cleanup)
                 }
 
-                // 6. Spawn via ChildMcpManager
-                const spawnResult = await childMcpManager.spawn(
-                    payload,
-                    {
+                // 6. Spawn via ChildMcpManager. Missing keys/binaries are this
+                //    machine's problem, not the MCP's — refuse without reporting.
+                let spawnResult;
+                try {
+                    spawnResult = await childMcpManager.spawn(payload, {
                         source: "standalone",
                         memory_id: bhivedId,
+                    });
+                } catch (error: unknown) {
+                    if (error instanceof ChildMcpPrerequisiteError) {
+                        return {
+                            content: [
+                                {
+                                    type: "text" as const,
+                                    text: formatPrerequisiteError(payload, error),
+                                },
+                            ],
+                            isError: true,
+                        };
                     }
-                );
+                    throw error;
+                }
 
                 // 7. Fire-and-forget activation tracking
                 restClient
@@ -191,12 +216,7 @@ export function registerInitiateMcpTool(server: McpServer): void {
                     content: [
                         {
                             type: "text" as const,
-                            text: formatMcpOutput(
-                                mcpName,
-                                payload.description,
-                                spawnResult.tools,
-                                false
-                            ),
+                            text: formatMcpOutput(payload, spawnResult.tools, false),
                         },
                     ],
                 };
@@ -225,7 +245,7 @@ export function registerInitiateMcpTool(server: McpServer): void {
                     ? `\n\n**Debug payload:**\n` +
                       `- command: \`${activation.mcp_payload.command}\`\n` +
                       `- args: \`${JSON.stringify(activation.mcp_payload.args)}\`\n` +
-                      `- env keys: ${Object.keys(activation.mcp_payload.env || {}).join(", ") || "(none)"}\n` +
+                      `- env requirements: ${normalizeRequirements(activation.mcp_payload.env_requirements).map((r) => r.name).join(", ") || "(none)"}\n` +
                       `- name: ${activation.mcp_payload.name}`
                     : "";
 
@@ -245,12 +265,25 @@ export function registerInitiateMcpTool(server: McpServer): void {
 
 // ── Formatting helpers ───────────────────────────────────────────
 
+function formatPrerequisiteError(payload: McpPayload, error: ChildMcpPrerequisiteError): string {
+    const lines = [`## ❌ MCP Not Started: ${payload.name}\n`, error.message, ""];
+    if (error.missing.length > 0) {
+        lines.push(missingEnvHelp());
+        lines.push("");
+        lines.push(
+            "Ask the user for the value — never invent one — or pick a different MCP from your " +
+            "bhived_query results whose requirements are already set."
+        );
+    }
+    return lines.join("\n");
+}
+
 function formatMcpOutput(
-    mcpName: string,
-    description: string,
+    payload: McpPayload,
     tools: ChildMcpTool[],
     isReconnection: boolean
 ): string {
+    const mcpName = payload.name;
     const lines: string[] = [];
 
     // Header
@@ -262,8 +295,18 @@ function formatMcpOutput(
     }
 
     // Description
-    if (description) {
-        lines.push(description);
+    if (payload.description) {
+        lines.push(payload.description);
+        lines.push("");
+    }
+
+    const details = [
+        formatEnvRequirements(payload.env_requirements),
+        formatHeaderRequirements(payload.header_requirements),
+        formatQualitySignals(asRecord(payload.metadata)),
+    ].filter((line): line is string => line !== null);
+    if (details.length > 0) {
+        lines.push(details.join("\n"));
         lines.push("");
     }
 
