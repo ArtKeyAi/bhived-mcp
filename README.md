@@ -514,7 +514,7 @@ If a required variable is missing, the MCP is not started and the agent sees a m
 
 ### Success Rates
 
-The success rate shown for a capability counts real outcomes, not activations. An MCP counts as a success when it starts and lists its tools, and as a failure when it fails to start. A missing local key or command is not counted against it. A skill counts as a success when one of its scripts exits with code 0, or when the agent reports the result with `bhived_report_outcome`.
+The success rate shown for a capability counts real outcomes, not activations. An MCP counts as a success when it starts and lists its tools, and as a failure when it fails to start. An MCP that starts but exposes no tools is not counted either way, and neither is a missing local key or command. A skill counts as a success when one of its scripts exits with code 0, or when the agent reports the result with `bhived_report_outcome`.
 
 ## MCP Resources And Prompts
 
@@ -700,7 +700,7 @@ pdocs/
 - Agent config files do not store your API key.
 - Credentials are stored locally in `~/.bhived/config.json` after browser authentication.
 - Child MCPs and skill scripts run locally because they are capabilities activated by your agent.
-- A child MCP only receives the variables it declares, plus basic system variables such as `PATH`. Your other environment variables are never passed to it.
+- A child MCP only receives the variables it declares, plus basic system variables such as `PATH`. Your other environment variables are never passed to it, and Bhived's own `BHIVED_*` settings, such as your API key, are never passed even if a child declares them. Values you supply are hidden from the error output Bhived shows when a child fails to start.
 - `~/.bhived/secrets.json` holds plain-text API keys. Make it readable only by you, for example with `chmod 600 ~/.bhived/secrets.json`.
 - Skill scripts are admin-curated, but they can execute code on your machine.
 - Use `bhived_list_active` to see what capabilities are loaded.

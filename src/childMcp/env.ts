@@ -31,7 +31,11 @@ export interface ResolvedChildEnv {
     missing: EnvRequirement[];
 }
 
-/** Raised before launch when the child cannot run on this machine as configured. */
+/**
+ * The child cannot run on this machine as configured: a missing variable or
+ * command, a command that cannot be executed, or this session's child-process
+ * limit. Callers must not report it as a failure of the capability.
+ */
 export class ChildMcpPrerequisiteError extends Error {
     constructor(
         readonly mcpName: string,
@@ -44,6 +48,8 @@ export class ChildMcpPrerequisiteError extends Error {
 }
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+/** bhived's own settings (BHIVED_API_KEY, ...) are never handed to a child. Case-insensitive like Windows env. */
+const RESERVED_NAME = /^BHIVED_/i;
 
 export function getSecretsFilePath(): string {
     return process.env.BHIVED_SECRETS_FILE || join(homedir(), ".bhived", "secrets.json");
@@ -57,23 +63,28 @@ export function getSecretsFilePath(): string {
 function readSecretsFile(): Record<string, string> {
     try {
         const parsed: unknown = JSON.parse(readFileSync(getSecretsFilePath(), "utf-8"));
-        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-        const secrets: Record<string, string> = {};
+        // Null prototype: a declared name like "constructor" must not resolve to a function.
+        const secrets: Record<string, string> = Object.create(null);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return secrets;
         for (const [name, value] of Object.entries(parsed)) {
             if (typeof value === "string" && value !== "") secrets[name] = value;
         }
         return secrets;
     } catch {
-        return {};
+        return Object.create(null);
     }
 }
 
-/** Keep only well-formed requirement entries; the backend payload is untrusted input. */
+/**
+ * Keep only well-formed requirement entries; the backend payload is untrusted
+ * input, and it decides which names a child may request — never bhived's own.
+ */
 export function normalizeRequirements(raw: unknown): EnvRequirement[] {
     if (!Array.isArray(raw)) return [];
     return raw.filter(
         (req): req is EnvRequirement =>
-            Boolean(req) && typeof req === "object" && typeof req.name === "string" && ENV_NAME.test(req.name)
+            Boolean(req) && typeof req === "object" && typeof req.name === "string" &&
+            ENV_NAME.test(req.name) && !RESERVED_NAME.test(req.name)
     );
 }
 
@@ -82,7 +93,7 @@ export function staticEnv(env: McpStaticEnv | undefined): Record<string, string>
     if (!env || typeof env !== "object" || Array.isArray(env)) return {};
     const result: Record<string, string> = {};
     for (const [name, value] of Object.entries(env)) {
-        if (ENV_NAME.test(name) && typeof value === "string") result[name] = value;
+        if (ENV_NAME.test(name) && !RESERVED_NAME.test(name) && typeof value === "string") result[name] = value;
     }
     return result;
 }
@@ -91,8 +102,9 @@ function lookup(
     req: EnvRequirement,
     secrets: Record<string, string>
 ): { value: string; source: EnvSource } | undefined {
-    const fromEnv = process.env[req.name];
-    if (fromEnv) return { value: fromEnv, source: "environment" };
+    // typeof guards: process.env inherits Object.prototype ("constructor", ...).
+    const fromEnv: unknown = process.env[req.name];
+    if (typeof fromEnv === "string" && fromEnv) return { value: fromEnv, source: "environment" };
     if (secrets[req.name]) return { value: secrets[req.name], source: "secrets file" };
     if (typeof req.default === "string" && req.default !== "") {
         return { value: req.default, source: "default" };
@@ -142,9 +154,25 @@ export function formatMissingEnv(missing: EnvRequirement[]): string {
 
 export function missingEnvHelp(): string {
     return (
-        `Set each variable in the environment bhived-mcp runs in (the "env" block of the agent's ` +
-        `bhived MCP config, or your shell before starting the agent), or add it to ` +
-        `${getSecretsFilePath()} as { "NAME": "value" }. The secrets file is re-read on every ` +
-        `activation, so no restart is needed after editing it.`
+        `Add it to ${getSecretsFilePath()} as { "NAME": "value" } and activate again — the file is ` +
+        `re-read on every activation, so no restart is needed. Alternatively set it in the environment ` +
+        `bhived-mcp runs in (the "env" block of the agent's bhived MCP config, or the shell that starts ` +
+        `the agent), which needs an agent restart.`
     );
+}
+
+/**
+ * Replace user-supplied values (environment / secrets file) in text a child
+ * produced — e.g. "Invalid key: <value>" on stderr — before it is logged or
+ * shown to the agent. Declared defaults and admin-curated static env are public.
+ */
+export function redactSecrets(text: string, resolved: ResolvedChildEnv): string {
+    let out = text;
+    for (const [name, source] of Object.entries(resolved.sources)) {
+        const value = resolved.env[name];
+        if (source !== "default" && value && value.length >= 4) {
+            out = out.split(value).join(`[REDACTED ${name}]`);
+        }
+    }
+    return out;
 }

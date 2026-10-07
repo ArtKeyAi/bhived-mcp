@@ -199,12 +199,16 @@ export function registerInitiateMcpTool(server: McpServer): void {
                             isError: true,
                         };
                     }
-                    reportOutcome(bhivedId, false, "initiateMcp");
+                    void reportOutcome(bhivedId, false, "initiateMcp");
                     throw error;
                 }
 
-                // 7. Report the real outcome: launched AND exposed tools.
-                reportOutcome(bhivedId, spawnResult.tools.length > 0, "initiateMcp");
+                // 7. Report the real outcome: success once it launched and exposed
+                //    tools. A launch with no tools is ambiguous (it may need extra
+                //    configuration), so it is not reported either way.
+                if (spawnResult.tools.length > 0) {
+                    void reportOutcome(bhivedId, true, "initiateMcp");
+                }
 
                 // 8. Return output with tool listing
                 return {

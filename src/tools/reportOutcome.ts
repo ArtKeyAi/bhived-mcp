@@ -30,22 +30,28 @@ export function wasActivated(bhivedId: string): boolean {
     return activated.has(bhivedId);
 }
 
-/**
- * Send one outcome report (fire-and-forget). Returns false when it was skipped
- * because the capability wasn't activated here or the same outcome was
- * already sent this session.
- */
-export function reportOutcome(bhivedId: string, success: boolean, source: string): boolean {
-    const key = `${bhivedId}\u0000${success}`;
-    if (!activated.has(bhivedId) || reported.has(key)) return false;
-    reported.add(key);
+export type ReportStatus = "sent" | "skipped" | "failed";
 
-    restClient.reportCapability(bhivedId, { success }).catch((err: unknown) => {
+/**
+ * Send one outcome report. Never rejects, so automatic callers can fire and
+ * forget it. "skipped" means the capability wasn't activated here or the same
+ * outcome was already sent this session; a failed send can be retried.
+ */
+export async function reportOutcome(bhivedId: string, success: boolean, source: string): Promise<ReportStatus> {
+    const key = `${bhivedId}\u0000${success}`;
+    if (!activated.has(bhivedId) || reported.has(key)) return "skipped";
+    reported.add(key); // before the request, so concurrent callers don't double-send
+
+    try {
+        await restClient.reportCapability(bhivedId, { success });
+        return "sent";
+    } catch (err: unknown) {
+        reported.delete(key);
         console.error(
             `[${source}] Failed to report outcome for '${bhivedId}': ${err instanceof Error ? err.message : String(err)}`
         );
-    });
-    return true;
+        return "failed";
+    }
 }
 
 // ── Tool ─────────────────────────────────────────────────────────
@@ -111,16 +117,15 @@ export function registerReportOutcomeTool(server: McpServer): void {
             }
 
             const outcome = params.success ? "success" : "failure";
-            const sent = reportOutcome(bhivedId, params.success, "reportOutcome");
+            const status = await reportOutcome(bhivedId, params.success, "reportOutcome");
+            const text = {
+                sent: `✅ Recorded ${outcome} for \`${bhivedId}\`.`,
+                skipped: `ℹ️ A ${outcome} for \`${bhivedId}\` was already recorded this session — nothing more to do.`,
+                failed: `❌ Could not record the ${outcome} for \`${bhivedId}\` (the bhived API request failed). Try again later.`,
+            }[status];
             return {
-                content: [
-                    {
-                        type: "text" as const,
-                        text: sent
-                            ? `✅ Recorded ${outcome} for \`${bhivedId}\`.`
-                            : `ℹ️ A ${outcome} for \`${bhivedId}\` was already recorded this session — nothing more to do.`,
-                    },
-                ],
+                content: [{ type: "text" as const, text }],
+                ...(status === "failed" ? { isError: true } : {}),
             };
         }
     );

@@ -56,8 +56,8 @@ admin-curated, but they can execute code on this machine.
 
 The temporary skill directory includes SKILL.md, scripts/, references/ and assets/
 with their relative paths preserved. BHIVED_SKILL_ROOT points to that directory.
-The working directory remains the caller's project directory. The temporary skill
-directory is removed when execution finishes.
+The working directory is the one bhived-mcp was started in (normally the agent's
+project directory). The temporary skill directory is removed when execution finishes.
 
 Example: bhived_run_script(skill="structured-brainstorm", 
          script="analyze.py", args="--input ideas.json")`;
@@ -273,7 +273,7 @@ export function registerRunScriptTool(server: McpServer): void {
                 // A clean exit is real evidence the skill works. Non-zero exits are
                 // not reported: they are usually wrong arguments, not a broken skill.
                 if (result.exitCode === 0) {
-                    reportOutcome(skill.memory_id, true, "runScript");
+                    void reportOutcome(skill.memory_id, true, "runScript");
                 }
 
                 // 6. Format and return output

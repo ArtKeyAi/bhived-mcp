@@ -23,6 +23,7 @@ import {
     ChildMcpPrerequisiteError,
     formatMissingEnv,
     normalizeRequirements,
+    redactSecrets,
     resolveChildEnv,
     staticEnv,
 } from "./env.js";
@@ -53,6 +54,29 @@ export class ChildMcpManager {
     private healthInterval: ReturnType<typeof setInterval> | null = null;
     private healthCheckRunning = false;
     private readonly stopping = new Set<string>();
+    private readonly pending = new Map<string, { source: SpawnOptions["source"]; result: Promise<SpawnResult> }>();
+
+    /**
+     * Spawn a child MCP, or join a launch of the same MCP for the same owner
+     * that is already in flight — two overlapping launches would both start a
+     * process, and the registry would only keep (and later stop) one of them.
+     */
+    async spawn(
+        mcpConfig: McpConfig | McpPayload,
+        options: SpawnOptions
+    ): Promise<SpawnResult> {
+        const name = mcpConfig.name;
+        const inFlight = this.pending.get(name);
+        if (inFlight && inFlight.source === options.source) return inFlight.result;
+
+        const result = this.spawnOnce(mcpConfig, options);
+        this.pending.set(name, { source: options.source, result });
+        try {
+            return await result;
+        } finally {
+            if (this.pending.get(name)?.result === result) this.pending.delete(name);
+        }
+    }
 
     /**
      * Spawn a child MCP process, connect to it, and discover its tools.
@@ -65,7 +89,7 @@ export class ChildMcpManager {
      *   5. Set up crash handler
      *   6. Return discovered tools
      */
-    async spawn(
+    private async spawnOnce(
         mcpConfig: McpConfig | McpPayload,
         options: SpawnOptions
     ): Promise<SpawnResult> {
@@ -92,7 +116,8 @@ export class ChildMcpManager {
         // 0. Pre-flight, outside the spawn-failure path: these describe this
         //    machine, not a broken capability, so callers must not report them
         //    as capability failures.
-        const { env: childEnv, missing } = resolveChildEnv(mcpConfig);
+        const resolved = resolveChildEnv(mcpConfig);
+        const { env: childEnv, missing } = resolved;
         if (missing.length > 0) {
             throw new ChildMcpPrerequisiteError(name, formatMissingEnv(missing), missing);
         }
@@ -177,8 +202,13 @@ export class ChildMcpManager {
                 spawned_at: new Date(),
             };
 
-            // 6. Register in the registry (enforces limits)
-            childMcpRegistry.add(name, entry);
+            // 6. Register in the registry (enforces limits). A limit reached by a
+            //    concurrent launch is this session's capacity, not the MCP's fault.
+            try {
+                childMcpRegistry.add(name, entry);
+            } catch (error) {
+                throw new ChildMcpPrerequisiteError(name, error instanceof Error ? error.message : String(error));
+            }
 
             // 7. Set up crash handler
             this.setupCrashHandler(name, childProcess);
@@ -191,13 +221,16 @@ export class ChildMcpManager {
             return { name, tools, client };
         } catch (error) {
             // ── Enhanced error with contextual hints ──
-            const errorMsg = error instanceof Error ? error.message : String(error);
+            // The child may echo a key back ("Invalid key: ..."); never log or
+            // return the values bhived passed to it.
+            const errorMsg = redactSecrets(error instanceof Error ? error.message : String(error), resolved);
+            const childStderr = redactSecrets(stderrOutput, resolved);
             console.error(
                 `[ChildMcpManager] SPAWN FAILED for '${name}':\n` +
                 `  error: ${errorMsg}\n` +
                 `  command: ${mcpConfig.command}\n` +
                 `  args: ${JSON.stringify(mcpConfig.args)}\n` +
-                `  child stderr: ${stderrOutput || "(empty)"}`
+                `  child stderr: ${childStderr || "(empty)"}`
             );
 
             // Cleanup on failure
@@ -212,11 +245,20 @@ export class ChildMcpManager {
                 // Best effort
             }
 
+            if (error instanceof ChildMcpPrerequisiteError) throw error;
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code === "ENOENT" || code === "EACCES") {
+                throw new ChildMcpPrerequisiteError(
+                    name,
+                    `Command '${mcpConfig.command}' could not be started on this system (${code}).`
+                );
+            }
+
             // Build actionable error with stderr + contextual hints
-            const stderrHint = stderrOutput
-                ? `\nChild process stderr:\n${stderrOutput.slice(0, 1500)}`
+            const stderrHint = childStderr
+                ? `\nChild process stderr:\n${childStderr.slice(0, 1500)}`
                 : "";
-            const contextHint = this.buildErrorHints(mcpConfig, stderrOutput, errorMsg);
+            const contextHint = this.buildErrorHints(mcpConfig, childStderr, errorMsg);
             throw new Error(
                 `Failed to spawn MCP '${name}': ${errorMsg}${stderrHint}${contextHint}`
             );
