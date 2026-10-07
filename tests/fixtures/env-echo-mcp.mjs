@@ -1,6 +1,10 @@
 // Minimal stdio MCP server for tests: reports which test variables it received.
+// With ECHO_PID_LOG set, appends its PID there so tests can count launches.
+import { appendFileSync } from "node:fs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+
+if (process.env.ECHO_PID_LOG) appendFileSync(process.env.ECHO_PID_LOG, `${process.pid}\n`);
 
 const server = new McpServer({ name: "env-echo", version: "1.0.0" });
 server.registerTool("read_env", { description: "Return the test variables visible to this process." }, async () => ({

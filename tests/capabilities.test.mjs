@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import http from "node:http";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,6 +18,7 @@ const badHandshake = resolve(fileURLToPath(new URL("./fixtures/bad-handshake-mcp
 // ── Mock backend ─────────────────────────────────────────────────
 const activations = new Map(); // bhived_id → ActivationResponse
 const reports = []; // { id, success }
+const failingReports = new Set(); // bhived_ids whose report endpoint returns 500
 let queryResponse = {};
 let writeResponse = {};
 const backend = http.createServer(async (req, res) => {
@@ -31,6 +32,7 @@ const backend = http.createServer(async (req, res) => {
     if (match) {
         const id = decodeURIComponent(match[1]);
         if (match[2] === "report") {
+            if (failingReports.has(id)) return send(500, { detail: "unavailable" });
             reports.push({ id, success: JSON.parse(body).success });
             return send(200, { ok: true });
         }
@@ -324,6 +326,116 @@ test("a duplicate rejection names the existing lesson (live 409 body is wrapped 
         assert.equal(result.isError, true);
         assert.match(text(result), /existing_bhived_id\*\*: `existing-lesson`/);
         assert.match(text(result), /similarity\*\*: 99%/);
+    } finally {
+        writeResponse = {};
+    }
+});
+
+// ── Review fixes ─────────────────────────────────────────────────
+
+test("reserved and prototype names never resolve", () => {
+    const resolved = resolveChildEnv({
+        env: { BHIVED_API_URL: "static" },
+        env_requirements: [
+            { name: "BHIVED_API_KEY", required: true }, { name: "bhived_api_key", required: true },
+            { name: "constructor", required: true }, { name: "toString", required: false },
+        ],
+    });
+    assert.deepEqual(resolved.env, {}, "bhived's own key must never reach a child");
+    assert.deepEqual(resolved.missing.map((r) => r.name), ["constructor"]);
+});
+
+test("a supplied secret echoed on the child's stderr is redacted", async () => {
+    process.env.TEST_REQUIRED_KEY = "super-secret-value";
+    try {
+        activations.set("mcp-leak", mcpActivation("leaky", { args: [badHandshake], env_requirements: [REQUIREMENTS[0]] }));
+        const out = text(await call("bhived_initiate_mcp", { bhived_id: "mcp-leak" }));
+        assert.doesNotMatch(out, /super-secret-value/);
+        assert.match(out, /Invalid key: \[REDACTED TEST_REQUIRED_KEY\]/);
+    } finally {
+        delete process.env.TEST_REQUIRED_KEY;
+    }
+});
+
+const pidLog = join(home, "bundled-pids.log");
+const launches = async () => (await readFile(pidLog, "utf8").catch(() => "")).split("\n").filter(Boolean).length;
+const bundledEcho = (extraArgs = []) => ({
+    name: "bundled-echo", description: "", command: "node", args: [fixture, ...extraArgs], env: [],
+    env_requirements: [{ name: "ECHO_PID_LOG", required: false, default: pidLog }],
+});
+
+test("overlapping activations start a bundled MCP once; only MCP changes restart it", async () => {
+    activations.set("skill-bundled", skillActivation("bundled", { "s.mjs": "" }, { mcp_configs: [bundledEcho()] }));
+    const both = await Promise.all([1, 2].map(() => call("bhived_initiate_skill", { bhived_id: "skill-bundled" })));
+    both.forEach((r) => assert.equal(r.isError, undefined, text(r)));
+    assert.equal(await launches(), 1, "two overlapping activations must not launch two processes");
+
+    activations.set("skill-bundled", skillActivation("bundled", { "s.mjs": "" }, { skill_md: "# edited\n", mcp_configs: [bundledEcho()] }));
+    assert.match(text(await call("bhived_initiate_skill", { bhived_id: "skill-bundled" })), /Skill Updated/);
+    assert.equal(await launches(), 1, "a text-only update keeps the running MCP");
+
+    activations.set("skill-bundled", skillActivation("bundled", { "s.mjs": "" }, { skill_md: "# edited\n", mcp_configs: [bundledEcho(["--v2"])] }));
+    assert.match(text(await call("bhived_initiate_skill", { bhived_id: "skill-bundled" })), /Skill Updated/);
+    assert.equal(await launches(), 2, "a changed MCP config restarts it");
+    assert.ok(childMcpRegistry.get("bundled-echo").config.args.includes("--v2"));
+});
+
+test("a skill pushed out of the registry is fully unloaded", async () => {
+    assert.ok(childMcpRegistry.has("bundled-echo"));
+    for (let i = 0; i < 5; i++) {
+        activations.set(`skill-filler-${i}`, skillActivation(`filler-${i}`, {}));
+        await call("bhived_initiate_skill", { bhived_id: `skill-filler-${i}` });
+    }
+    assert.equal(childMcpRegistry.has("bundled-echo"), false, "evicted skill's bundled MCP must stop");
+    assert.match(text(await call("bhived_initiate_skill", { bhived_id: "skill-bundled" })), /✅ Skill Activated: bundled/);
+    assert.equal(childMcpRegistry.has("bundled-echo"), true);
+});
+
+test("re-activating retries a bundled MCP whose key was missing", async () => {
+    const needsKey = { ...bundledEcho(), name: "keyed-echo", env_requirements: [REQUIREMENTS[0]] };
+    activations.set("skill-keyed", skillActivation("keyed", {}, { mcp_configs: [needsKey] }));
+    assert.match(text(await call("bhived_initiate_skill", { bhived_id: "skill-keyed" })), /not started — Missing TEST_REQUIRED_KEY/);
+    assert.equal(childMcpRegistry.has("keyed-echo"), false);
+
+    await writeFile(secretsFile, JSON.stringify({ TEST_REQUIRED_KEY: "now-set" }));
+    try {
+        const retried = text(await call("bhived_initiate_skill", { bhived_id: "skill-keyed" }));
+        assert.match(retried, /Already Active/);
+        assert.doesNotMatch(retried, /Missing TEST_REQUIRED_KEY/);
+        assert.equal(childMcpRegistry.has("keyed-echo"), true);
+    } finally {
+        await rm(secretsFile, { force: true });
+    }
+});
+
+test("key order and type prefixes alone are not treated as an update", async () => {
+    activations.set("skill-order", skillActivation("ordered", { "a.mjs": "1", "b.mjs": "2" }));
+    await call("bhived_initiate_skill", { bhived_id: "skill-order" });
+    activations.set("skill-order", skillActivation("ordered", { "scripts/b.mjs": "2", "scripts/a.mjs": "1" }));
+    assert.match(text(await call("bhived_initiate_skill", { bhived_id: "skill-order" })), /Already Active/);
+});
+
+test("an explicit report that fails says so and can be retried", async () => {
+    activations.set("skill-flaky", skillActivation("flaky-report", {}));
+    await call("bhived_initiate_skill", { bhived_id: "skill-flaky" });
+    failingReports.add("skill-flaky");
+    const failed = await call("bhived_report_outcome", { bhived_id: "skill-flaky", success: true });
+    assert.equal(failed.isError, true);
+    assert.match(text(failed), /Could not record/);
+    failingReports.delete("skill-flaky");
+    assert.match(text(await call("bhived_report_outcome", { bhived_id: "skill-flaky", success: true })), /Recorded success/);
+});
+
+test("a supersede that corroborated the target explains itself without contradictions", async () => {
+    writeResponse = {
+        memory_id: "their-lesson", entities_created: 0, entities_merged: 0, relations_created: 0, causal_relations: 0,
+        next_edge_created: false, provenance_steps: 0, fingerprint_computed: true, query_id_linked: null,
+        supersedes_id_linked: null, action_performed: "corroborated", corroborations_created: 0, contradictions_created: 0,
+    };
+    try {
+        const out = text(await call("bhived_write_instruction", { title: "t", text: "x", supersedes_id: "their-lesson" }));
+        assert.match(out, /counted as agreement/);
+        assert.doesNotMatch(out, /saved as a separate lesson|Consider superseding/);
     } finally {
         writeResponse = {};
     }
