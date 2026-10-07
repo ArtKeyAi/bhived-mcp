@@ -1,7 +1,7 @@
 /**
  * bhived_run_script Tool
  *
- * Executes a script from an activated skill in a sandboxed subprocess.
+ * Executes a script from an activated skill in a temporary local subprocess.
  * Scripts are admin-curated — agents never upload their own scripts.
  *
  * Runtime detection:
@@ -16,12 +16,10 @@
 import { existsSync } from "node:fs";
 import { z } from "zod/v4";
 import { spawn } from "node:child_process";
-import { writeFile, unlink, mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { skillRegistry } from "../registries/skillRegistry.js";
 import { config } from "../config.js";
+import { materializeSkillBundle, type ScriptBundle } from "./skillBundle.js";
 
 const RunScriptInputSchema = z.object({
     skill: z
@@ -54,6 +52,11 @@ type RunScriptInput = z.infer<typeof RunScriptInputSchema>;
 const RUN_SCRIPT_DESCRIPTION = `Execute a script from an activated skill. The script runs as
 a temporary local subprocess and returns its output. Scripts are
 admin-curated, but they can execute code on this machine.
+
+The temporary skill directory includes SKILL.md, scripts/, references/ and assets/
+with their relative paths preserved. BHIVED_SKILL_ROOT points to that directory.
+The working directory remains the caller's project directory. The temporary skill
+directory is removed when execution finishes.
 
 Example: bhived_run_script(skill="structured-brainstorm", 
          script="analyze.py", args="--input ideas.json")`;
@@ -190,8 +193,7 @@ export function registerRunScriptTool(server: McpServer): void {
             },
         },
         async (params: RunScriptInput) => {
-            let tempDir: string | undefined;
-            let tempFile: string | undefined;
+            let bundle: ScriptBundle | undefined;
 
             try {
                 // 1. Look up skill
@@ -209,8 +211,7 @@ export function registerRunScriptTool(server: McpServer): void {
                 }
 
                 // 2. Look up script
-                const scriptContent = skill.scripts[params.script];
-                if (scriptContent === undefined) {
+                if (!Object.prototype.hasOwnProperty.call(skill.scripts, params.script)) {
                     const available = Object.keys(skill.scripts);
                     const availableList = available.length > 0
                         ? "\n\nAvailable scripts:\n" + available.map((s) => `  • ${s}`).join("\n")
@@ -227,13 +228,8 @@ export function registerRunScriptTool(server: McpServer): void {
                     };
                 }
 
-                // 3. Write script to temp file
-                tempDir = await mkdtemp(join(tmpdir(), "bhived-script-"));
-                // Script name may include subdirectory (e.g. "math/index.js")
-                // Extract just the base filename for the temp file
-                const scriptBasename = params.script.split("/").pop() ?? params.script;
-                tempFile = join(tempDir, scriptBasename);
-                await writeFile(tempFile, scriptContent, "utf-8");
+                // 3. Preserve sibling imports and resource paths for this run.
+                bundle = await materializeSkillBundle(skill, params.script);
 
                 // 4. Detect runtime and build command
                 const runtime = detectRuntime(params.script);
@@ -252,9 +248,9 @@ export function registerRunScriptTool(server: McpServer): void {
                 }
 
                 // Convert path for Git Bash on Windows (forward slashes)
-                let scriptPath = tempFile;
+                let scriptPath = bundle.scriptPath;
                 if (runtime.bashType && process.platform === "win32") {
-                    scriptPath = convertPathForBash(tempFile, runtime.bashType);
+                    scriptPath = convertPathForBash(scriptPath, runtime.bashType);
                 }
 
                 const execArgs = [
@@ -269,7 +265,8 @@ export function registerRunScriptTool(server: McpServer): void {
                     runtime.command,
                     execArgs,
                     params.input_data,
-                    timeout
+                    timeout,
+                    bundle.root
                 );
 
                 // 6. Format and return output
@@ -301,12 +298,12 @@ export function registerRunScriptTool(server: McpServer): void {
                     isError: true,
                 };
             } finally {
-                // Cleanup temp file
-                if (tempFile) {
+                // Clean the entire owned workspace, including generated files.
+                if (bundle) {
                     try {
-                        await unlink(tempFile);
-                    } catch {
-                        // Best effort cleanup
+                        await bundle.cleanup();
+                    } catch (error) {
+                        console.error("[RunScript] Temporary skill cleanup failed:", error);
                     }
                 }
             }
@@ -327,14 +324,16 @@ function executeScript(
     command: string,
     args: string[],
     inputData?: string,
-    timeout = 30000
+    timeout = 30000,
+    skillRoot?: string
 ): Promise<ScriptResult> {
     return new Promise((resolve, reject) => {
         const startTime = Date.now();
         const child = spawn(command, args, {
             timeout,
             stdio: ["pipe", "pipe", "pipe"],
-            env: { ...process.env },
+            env: { ...process.env, BHIVED_SKILL_ROOT: skillRoot },
+            windowsHide: true,
         });
 
         let stdout = "";
