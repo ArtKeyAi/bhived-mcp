@@ -25,6 +25,8 @@ export interface SkillEntry {
     mcp_names: string[];
     /** When the skill was activated */
     activated_at: Date;
+    /** Fingerprint of the activated payload; a different one means the server copy changed. */
+    content_hash?: string;
     /** Current status */
     status: "active" | "error";
 }

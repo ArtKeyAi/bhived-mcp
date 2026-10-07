@@ -29,6 +29,7 @@ import {
     resolveBhivedId,
     type BhivedIdInput,
 } from "./bhivedId.js";
+import { markActivated, reportOutcome } from "./reportOutcome.js";
 
 // ── Input Schema ─────────────────────────────────────────────────
 
@@ -160,6 +161,7 @@ export function registerInitiateMcpTool(server: McpServer): void {
                     `  env requirements: ${JSON.stringify(normalizeRequirements(payload.env_requirements).map((r) => r.name))}\n` +
                     `  tools_hint: ${JSON.stringify(payload.tools_hint)}`
                 );
+                markActivated(bhivedId, "mcp");
 
                 // 5. Check if already running (idempotent)
                 if (childMcpRegistry.has(mcpName)) {
@@ -197,19 +199,12 @@ export function registerInitiateMcpTool(server: McpServer): void {
                             isError: true,
                         };
                     }
+                    reportOutcome(bhivedId, false, "initiateMcp");
                     throw error;
                 }
 
-                // 7. Fire-and-forget activation tracking
-                restClient
-                    .reportCapability(bhivedId, {
-                        success: true,
-                    })
-                    .catch((err: unknown) => {
-                        console.error(
-                            `[initiateMcp] Failed to report activation: ${err instanceof Error ? err.message : String(err)}`
-                        );
-                    });
+                // 7. Report the real outcome: launched AND exposed tools.
+                reportOutcome(bhivedId, spawnResult.tools.length > 0, "initiateMcp");
 
                 // 8. Return output with tool listing
                 return {

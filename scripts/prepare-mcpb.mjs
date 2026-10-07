@@ -211,6 +211,11 @@ function buildToolMetadata({ dotNames = false } = {}) {
         tool(name("bhived_stop_mcp", "mcps.stop"), "Stop MCP", "Stop a running child MCP server and free local resources.", objectSchema({
             mcp: stringParam("Name of the active MCP server to stop."),
         }, ["mcp"]), textOutput(), { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false }),
+        tool(name("bhived_report_outcome", "capabilities.report"), "Report Capability Outcome", "Report whether a skill or MCP activated this session actually worked, so success rates reflect real use.", objectSchema({
+            bhived_id: stringParam("The Bhived ID of the activated skill or MCP."),
+            memory_id: stringParam("Deprecated compatibility alias for bhived_id."),
+            success: { type: "boolean", description: "true if it did what you needed; false if it failed or was unusable." },
+        }, ["bhived_id", "success"]), textOutput(), mutating({ idempotentHint: true })),
         tool(name("bhived_list_active", "capabilities.list"), "List Active Capabilities", "List active skills, child MCPs, registered resources, and available child MCP tools.", objectSchema({
             type: enumParam("Capability type filter.", ["skills", "mcps", "resources", "all"], "all"),
         }), textOutput(), readOnly({ openWorldHint: false })),

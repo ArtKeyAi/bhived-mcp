@@ -27,6 +27,7 @@ import { registerUseToolTool } from "./tools/useTool.js";
 import { registerInitiateSkillTool } from "./tools/initiateSkill.js";
 import { registerInitiateMcpTool } from "./tools/initiateMcp.js";
 import { registerStopMcpTool } from "./tools/stopMcp.js";
+import { registerReportOutcomeTool } from "./tools/reportOutcome.js";
 
 // Child MCP lifecycle
 import { childMcpManager } from "./childMcp/manager.js";
@@ -93,6 +94,7 @@ function createServer(): McpServer {
     registerInitiateSkillTool(server);
     registerInitiateMcpTool(server);
     registerStopMcpTool(server);
+    registerReportOutcomeTool(server);
 
     // ── Register resources — Static ──────────────────────────────
     server.registerResource(

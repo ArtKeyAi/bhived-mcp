@@ -20,6 +20,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { skillRegistry } from "../registries/skillRegistry.js";
 import { config } from "../config.js";
 import { materializeSkillBundle, type ScriptBundle } from "./skillBundle.js";
+import { reportOutcome } from "./reportOutcome.js";
 
 const RunScriptInputSchema = z.object({
     skill: z
@@ -268,6 +269,12 @@ export function registerRunScriptTool(server: McpServer): void {
                     timeout,
                     bundle.root
                 );
+
+                // A clean exit is real evidence the skill works. Non-zero exits are
+                // not reported: they are usually wrong arguments, not a broken skill.
+                if (result.exitCode === 0) {
+                    reportOutcome(skill.memory_id, true, "runScript");
+                }
 
                 // 6. Format and return output
                 const header = `## ⚡ Script Output: ${params.script}\n**Skill**: ${params.skill} · **Exit code**: ${result.exitCode} · **Duration**: ${result.durationMs}ms\n\n---\n\n`;

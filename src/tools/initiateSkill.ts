@@ -9,6 +9,7 @@
  * and bundled MCP tool tables so the agent can immediately use them.
  */
 
+import { createHash } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { restClient } from "../client/restClient.js";
 import { skillRegistry } from "../registries/skillRegistry.js";
@@ -16,13 +17,15 @@ import { resourceRegistry, ResourceRegistry } from "../registries/resourceRegist
 import { childMcpManager } from "../childMcp/manager.js";
 import { ChildMcpPrerequisiteError, missingEnvHelp } from "../childMcp/env.js";
 import type { ChildMcpTool } from "../registries/childMcpRegistry.js";
-import type { McpConfig } from "../client/types.js";
+import type { McpConfig, SkillPayload } from "../client/types.js";
 import { config } from "../config.js";
+import { asRecord, formatQualitySignals } from "../formatters/capabilityFormatter.js";
 import {
     BhivedIdInputSchema,
     resolveBhivedId,
     type BhivedIdInput,
 } from "./bhivedId.js";
+import { markActivated } from "./reportOutcome.js";
 
 // ── Input Schema ─────────────────────────────────────────────────
 
@@ -38,6 +41,9 @@ to the skill's SKILL.md instructions and can use:
 - bhived_run_script to execute the skill's scripts
 - bhived_read_resource to read reference docs and assets
 - bhived_use_tool for any bundled MCP tools
+
+Calling this again for an active skill re-fetches it and reloads it if the
+server's copy changed since you activated it.
 
 Pass bhived_id. The deprecated memory_id alias is accepted for compatibility.
 
@@ -115,26 +121,39 @@ export function registerInitiateSkillTool(server: McpServer): void {
                 const cleanScripts = stripTypePrefix("scripts", payload.scripts ?? {});
                 const cleanRefs = stripTypePrefix("references", payload.references ?? {});
                 const cleanAssets = stripTypePrefix("assets", payload.assets ?? {});
+                const contentHash = fingerprint(payload);
+                markActivated(bhivedId, "skill");
 
-                // 5. Check if already active (idempotent re-activation)
-                if (skillRegistry.has(skillName)) {
-                    const existing = skillRegistry.get(skillName)!;
-                    return {
-                        content: [
-                            {
-                                type: "text" as const,
-                                text: formatSkillOutput(
-                                    skillName,
-                                    existing.skill_md,
-                                    existing.scripts,
-                                    existing.references,
-                                    existing.assets,
-                                    existing.mcp_names,
-                                    true
-                                ),
-                            },
-                        ],
-                    };
+                // 5. Already active: unchanged → serve the cached copy; changed on
+                //    the server (or another skill with the same name) → reload.
+                let reload: SkillReload | undefined;
+                const existing = skillRegistry.get(skillName);
+                if (existing) {
+                    if (existing.memory_id === bhivedId && existing.content_hash === contentHash) {
+                        return {
+                            content: [
+                                {
+                                    type: "text" as const,
+                                    text: formatSkillOutput(
+                                        skillName,
+                                        bhivedId,
+                                        existing.skill_md,
+                                        existing.scripts,
+                                        existing.references,
+                                        existing.assets,
+                                        existing.mcp_names,
+                                        { kind: "reactivation" }
+                                    ),
+                                },
+                            ],
+                        };
+                    }
+                    reload = existing.memory_id === bhivedId
+                        ? { kind: "updated" }
+                        : { kind: "replaced", previousId: existing.memory_id };
+                    await childMcpManager.stopBySkill(skillName);
+                    resourceRegistry.removeBySkill(skillName);
+                    skillRegistry.remove(skillName);
                 }
 
                 // 6. Register all resources in ResourceRegistry
@@ -211,30 +230,25 @@ export function registerInitiateSkillTool(server: McpServer): void {
                     mcp_names: spawnedMcpNames,
                     activated_at: new Date(),
                     status: "active",
+                    content_hash: contentHash,
                 });
 
-                // 8. Fire-and-forget activation tracking
-                restClient
-                    .reportCapability(bhivedId, {
-                        success: true,
-                    })
-                    .catch((err: unknown) => {
-                        console.error(
-                            `[initiateSkill] Failed to report activation: ${err instanceof Error ? err.message : String(err)}`
-                        );
-                    });
+                // 8. No outcome report here: activating says nothing about whether
+                //    the skill works. Scripts exiting 0 or bhived_report_outcome do.
 
-                // 10. Build and return output
+                // 9. Build and return output
                 const output = formatSkillOutput(
                     skillName,
+                    bhivedId,
                     payload.skill_md,
                     cleanScripts,
                     cleanRefs,
                     cleanAssets,
                     spawnedMcpNames,
-                    false,
+                    reload ?? { kind: "activation" },
                     allBundledTools,
-                    mcpErrors
+                    mcpErrors,
+                    formatQualitySignals(asRecord(payload.metadata))
                 );
 
                 return {
@@ -278,6 +292,27 @@ export function registerInitiateSkillTool(server: McpServer): void {
 
 // ── Helpers ──────────────────────────────────────────────────────
 
+type SkillReload = { kind: "updated" } | { kind: "replaced"; previousId: string };
+type SkillOutputMode = { kind: "activation" } | { kind: "reactivation" } | SkillReload;
+
+/**
+ * Fingerprint of everything an agent can observe from a skill. Activation
+ * responses carry no version hash, so compare content: any server-side edit
+ * (e.g. a repaired description or script) changes it.
+ */
+function fingerprint(payload: SkillPayload): string {
+    return createHash("sha256")
+        .update(JSON.stringify([
+            payload.description ?? "",
+            payload.skill_md ?? "",
+            payload.scripts ?? {},
+            payload.references ?? {},
+            payload.assets ?? {},
+            payload.mcp_configs ?? [],
+        ]))
+        .digest("hex");
+}
+
 /**
  * Strip type-prefix from resource map keys.
  * Backend may return keys like "scripts/generate.py" inside the scripts dict.
@@ -299,23 +334,44 @@ function stripTypePrefix(
 
 function formatSkillOutput(
     skillName: string,
+    bhivedId: string,
     skillMd: string,
     scripts: Record<string, string>,
     references: Record<string, string>,
     assets: Record<string, string>,
     mcpNames: string[],
-    isReactivation: boolean,
+    mode: SkillOutputMode,
     bundledTools?: Array<{ mcpName: string; tools: ChildMcpTool[] }>,
-    mcpErrors?: string[]
+    mcpErrors?: string[],
+    qualitySignals?: string | null
 ): string {
     const lines: string[] = [];
 
     // Header
-    if (isReactivation) {
-        lines.push(`## ♻️ Skill Already Active: ${skillName}\n`);
-        lines.push(`This skill is already activated. Here are its instructions:\n`);
-    } else {
-        lines.push(`## ✅ Skill Activated: ${skillName}\n`);
+    switch (mode.kind) {
+        case "reactivation":
+            lines.push(`## ♻️ Skill Already Active: ${skillName}\n`);
+            lines.push(`This skill is already activated and unchanged on the server. Here are its instructions:\n`);
+            break;
+        case "updated":
+            lines.push(`## 🔄 Skill Updated: ${skillName}\n`);
+            lines.push(
+                `The server's copy changed since you activated it, so it was reloaded. ` +
+                `Use these instructions and resources instead of the earlier ones:\n`
+            );
+            break;
+        case "replaced":
+            lines.push(`## 🔄 Skill Activated: ${skillName}\n`);
+            lines.push(
+                `This replaces a different skill with the same name (bhived_id \`${mode.previousId}\`) ` +
+                `that was active before. Use these instructions instead of the earlier ones:\n`
+            );
+            break;
+        default:
+            lines.push(`## ✅ Skill Activated: ${skillName}\n`);
+    }
+    if (qualitySignals) {
+        lines.push(`${qualitySignals}\n`);
     }
 
     // Full SKILL.md content
@@ -381,6 +437,12 @@ function formatSkillOutput(
             lines.push(`- ${err}`);
         }
     }
+
+    lines.push(
+        `\n> After using this skill for your task, report whether it worked: ` +
+        `\`bhived_report_outcome(bhived_id="${bhivedId}", success=true|false)\`. ` +
+        `Scripts that exit 0 are reported as successes automatically.`
+    );
 
     return lines.join("\n");
 }
