@@ -27,6 +27,8 @@ export interface SkillEntry {
     activated_at: Date;
     /** Fingerprint of the activated payload; a different one means the server copy changed. */
     content_hash?: string;
+    /** Fingerprint of mcp_configs alone; bundled MCPs restart only when it changes. */
+    mcp_hash?: string;
     /** Current status */
     status: "active" | "error";
 }
@@ -37,16 +39,20 @@ export class SkillRegistry {
     /**
      * Register a new active skill.
      * Starts tracking the skill and keeps the registry count at at most 5 by removing the oldest skill.
+     * Returns the evicted entry so the caller can stop its bundled MCPs and drop its resources.
      */
-    add(entry: SkillEntry): void {
+    add(entry: SkillEntry): SkillEntry | undefined {
         this.skills.delete(entry.name);
         this.skills.set(entry.name, entry);
         if (this.skills.size > 5) {
             const oldest = this.skills.keys().next().value;
             if (oldest !== undefined) {
+                const evicted = this.skills.get(oldest);
                 this.skills.delete(oldest);
+                return evicted;
             }
         }
+        return undefined;
     }
 
     /** Get a skill entry by name. */

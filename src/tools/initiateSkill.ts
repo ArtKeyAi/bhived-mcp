@@ -15,6 +15,7 @@ import { restClient } from "../client/restClient.js";
 import { skillRegistry } from "../registries/skillRegistry.js";
 import { resourceRegistry, ResourceRegistry } from "../registries/resourceRegistry.js";
 import { childMcpManager } from "../childMcp/manager.js";
+import { childMcpRegistry } from "../registries/childMcpRegistry.js";
 import { ChildMcpPrerequisiteError, missingEnvHelp } from "../childMcp/env.js";
 import type { ChildMcpTool } from "../registries/childMcpRegistry.js";
 import type { McpConfig, SkillPayload } from "../client/types.js";
@@ -113,152 +114,9 @@ export function registerInitiateSkillTool(server: McpServer): void {
                 }
 
                 const payload = activation.skill_payload;
-                const skillName = payload.name;
-
-                // 4. Normalize resource maps — backend may return keys with
-                //    type-prefix (e.g. "scripts/generate.py" in the scripts dict).
-                //    Strip the prefix so lookups work with plain filenames.
-                const cleanScripts = stripTypePrefix("scripts", payload.scripts ?? {});
-                const cleanRefs = stripTypePrefix("references", payload.references ?? {});
-                const cleanAssets = stripTypePrefix("assets", payload.assets ?? {});
-                const contentHash = fingerprint(payload);
-                markActivated(bhivedId, "skill");
-
-                // 5. Already active: unchanged → serve the cached copy; changed on
-                //    the server (or another skill with the same name) → reload.
-                let reload: SkillReload | undefined;
-                const existing = skillRegistry.get(skillName);
-                if (existing) {
-                    if (existing.memory_id === bhivedId && existing.content_hash === contentHash) {
-                        return {
-                            content: [
-                                {
-                                    type: "text" as const,
-                                    text: formatSkillOutput(
-                                        skillName,
-                                        bhivedId,
-                                        existing.skill_md,
-                                        existing.scripts,
-                                        existing.references,
-                                        existing.assets,
-                                        existing.mcp_names,
-                                        { kind: "reactivation" }
-                                    ),
-                                },
-                            ],
-                        };
-                    }
-                    reload = existing.memory_id === bhivedId
-                        ? { kind: "updated" }
-                        : { kind: "replaced", previousId: existing.memory_id };
-                    await childMcpManager.stopBySkill(skillName);
-                    resourceRegistry.removeBySkill(skillName);
-                    skillRegistry.remove(skillName);
-                }
-
-                // 6. Register all resources in ResourceRegistry
-                const resourceTypes: Array<{ type: string; map: Record<string, string> }> = [
-                    { type: "scripts", map: cleanScripts },
-                    { type: "references", map: cleanRefs },
-                    { type: "assets", map: cleanAssets },
-                ];
-
-                for (const { type, map } of resourceTypes) {
-                    for (const [filename, content] of Object.entries(map)) {
-                        const uri = ResourceRegistry.buildUri(skillName, type, filename);
-                        const mimeType = ResourceRegistry.inferMimeType(filename);
-                        resourceRegistry.add(uri, {
-                            content,
-                            mimeType,
-                            source_skill: skillName,
-                        });
-                    }
-                }
-
-                // 6. Spawn bundled MCPs (if any)
-                const spawnedMcpNames: string[] = [];
-                const allBundledTools: Array<{ mcpName: string; tools: ChildMcpTool[] }> = [];
-                const mcpErrors: string[] = [];
-
-                if (payload.mcp_configs && payload.mcp_configs.length > 0) {
-                    // Enforce per-skill bundled MCP limit
-                    const configsToSpawn = payload.mcp_configs.slice(0, config.maxBundledMcps);
-                    if (payload.mcp_configs.length > config.maxBundledMcps) {
-                        mcpErrors.push(
-                            `⚠️ Skill declares ${payload.mcp_configs.length} bundled MCPs but max is ${config.maxBundledMcps}. ` +
-                            `Only the first ${config.maxBundledMcps} will be spawned.`
-                        );
-                    }
-
-                    for (const mcpConfig of configsToSpawn) {
-                        try {
-                            const result = await childMcpManager.spawn(
-                                mcpConfig as McpConfig,
-                                {
-                                    source: `skill:${skillName}`,
-                                    memory_id: bhivedId,
-                                }
-                            );
-                            spawnedMcpNames.push(result.name);
-                            allBundledTools.push({
-                                mcpName: result.name,
-                                tools: result.tools,
-                            });
-                        } catch (error: unknown) {
-                            const msg = error instanceof Error ? error.message : String(error);
-                            mcpErrors.push(
-                                error instanceof ChildMcpPrerequisiteError
-                                    ? `⚠️ Bundled MCP '${mcpConfig.name}' not started — ${msg.replace(/\n/g, "; ")}. ` +
-                                      (error.missing.length > 0 ? missingEnvHelp() : "")
-                                    : `⚠️ Failed to spawn bundled MCP '${mcpConfig.name}': ${msg}`
-                            );
-                            console.error(
-                                `[initiateSkill] Failed to spawn bundled MCP '${mcpConfig.name}': ${msg}`
-                            );
-                        }
-                    }
-                }
-
-                // 8. Register skill in SkillRegistry (with cleaned keys)
-                skillRegistry.add({
-                    memory_id: bhivedId,
-                    name: skillName,
-                    skill_md: payload.skill_md,
-                    scripts: cleanScripts,
-                    references: cleanRefs,
-                    assets: cleanAssets,
-                    mcp_names: spawnedMcpNames,
-                    activated_at: new Date(),
-                    status: "active",
-                    content_hash: contentHash,
-                });
-
-                // 8. No outcome report here: activating says nothing about whether
-                //    the skill works. Scripts exiting 0 or bhived_report_outcome do.
-
-                // 9. Build and return output
-                const output = formatSkillOutput(
-                    skillName,
-                    bhivedId,
-                    payload.skill_md,
-                    cleanScripts,
-                    cleanRefs,
-                    cleanAssets,
-                    spawnedMcpNames,
-                    reload ?? { kind: "activation" },
-                    allBundledTools,
-                    mcpErrors,
-                    formatQualitySignals(asRecord(payload.metadata))
-                );
-
-                return {
-                    content: [
-                        {
-                            type: "text" as const,
-                            text: output,
-                        },
-                    ],
-                };
+                // One activation per skill at a time: overlapping calls would both
+                // stop and respawn its bundled MCPs and orphan a process.
+                return await withSkillLock(payload.name, () => loadSkill(bhivedId, payload));
             } catch (error: unknown) {
                 const statusCode = (error as { statusCode?: number }).statusCode;
                 if (statusCode === 404) {
@@ -290,27 +148,217 @@ export function registerInitiateSkillTool(server: McpServer): void {
     );
 }
 
+// ── Loading ──────────────────────────────────────────────────────
+
+const skillLocks = new Map<string, Promise<unknown>>();
+
+/** Run activations of the same skill one at a time. */
+async function withSkillLock<T>(skillName: string, task: () => Promise<T>): Promise<T> {
+    const run = (skillLocks.get(skillName) ?? Promise.resolve()).then(task);
+    const settled = run.catch(() => undefined);
+    skillLocks.set(skillName, settled);
+    try {
+        return await run;
+    } finally {
+        if (skillLocks.get(skillName) === settled) skillLocks.delete(skillName);
+    }
+}
+
+async function loadSkill(bhivedId: string, payload: SkillPayload) {
+    const skillName = payload.name;
+
+    // 4. Normalize resource maps — backend may return keys with
+    //    type-prefix (e.g. "scripts/generate.py" in the scripts dict).
+    //    Strip the prefix so lookups work with plain filenames.
+    const cleanScripts = stripTypePrefix("scripts", payload.scripts ?? {});
+    const cleanRefs = stripTypePrefix("references", payload.references ?? {});
+    const cleanAssets = stripTypePrefix("assets", payload.assets ?? {});
+    // Activation responses carry no version hash, so compare what an agent can
+    // observe. Hashed over the normalized maps so key order or "scripts/"
+    // prefixes alone never count as a change.
+    const contentHash = fingerprint([
+        payload.description ?? "",
+        payload.skill_md ?? "",
+        cleanScripts,
+        cleanRefs,
+        cleanAssets,
+        payload.mcp_configs ?? [],
+    ]);
+    const mcpHash = fingerprint(payload.mcp_configs ?? []);
+    markActivated(bhivedId, "skill");
+
+    // 5. Already active: unchanged → serve the cached copy; changed on
+    //    the server (or another skill with the same name) → reload.
+    let mode: SkillOutputMode = { kind: "activation" };
+    const existing = skillRegistry.get(skillName);
+    if (existing) {
+        const unchanged = existing.memory_id === bhivedId && existing.content_hash === contentHash;
+        // A bundled MCP that isn't running (e.g. its key was missing last time)
+        // is retried on re-activation rather than serving the cached copy.
+        const bundledDown = (payload.mcp_configs ?? [])
+            .slice(0, config.maxBundledMcps)
+            .some((mcp) => childMcpRegistry.get(mcp.name)?.status !== "active");
+        if (unchanged && !bundledDown) {
+            return {
+                content: [
+                    {
+                        type: "text" as const,
+                        text: formatSkillOutput(
+                            skillName,
+                            bhivedId,
+                            existing.skill_md,
+                            existing.scripts,
+                            existing.references,
+                            existing.assets,
+                            existing.mcp_names,
+                            { kind: "reactivation" }
+                        ),
+                    },
+                ],
+            };
+        }
+        mode = unchanged
+            ? { kind: "reactivation" }
+            : existing.memory_id === bhivedId
+                ? { kind: "updated" }
+                : { kind: "replaced", previousId: existing.memory_id };
+        // Bundled MCPs keep running (and keep their state) unless their own
+        // configuration changed; the spawn loop below reuses running ones.
+        if (mode.kind === "replaced" || existing.mcp_hash !== mcpHash) {
+            await childMcpManager.stopBySkill(skillName);
+        }
+        resourceRegistry.removeBySkill(skillName);
+        skillRegistry.remove(skillName);
+    }
+
+    // 6. Register all resources in ResourceRegistry
+    const resourceTypes: Array<{ type: string; map: Record<string, string> }> = [
+        { type: "scripts", map: cleanScripts },
+        { type: "references", map: cleanRefs },
+        { type: "assets", map: cleanAssets },
+    ];
+
+    for (const { type, map } of resourceTypes) {
+        for (const [filename, content] of Object.entries(map)) {
+            const uri = ResourceRegistry.buildUri(skillName, type, filename);
+            const mimeType = ResourceRegistry.inferMimeType(filename);
+            resourceRegistry.add(uri, {
+                content,
+                mimeType,
+                source_skill: skillName,
+            });
+        }
+    }
+
+    // 6. Spawn bundled MCPs (if any)
+    const spawnedMcpNames: string[] = [];
+    const allBundledTools: Array<{ mcpName: string; tools: ChildMcpTool[] }> = [];
+    const mcpErrors: string[] = [];
+
+    if (payload.mcp_configs && payload.mcp_configs.length > 0) {
+        // Enforce per-skill bundled MCP limit
+        const configsToSpawn = payload.mcp_configs.slice(0, config.maxBundledMcps);
+        if (payload.mcp_configs.length > config.maxBundledMcps) {
+            mcpErrors.push(
+                `⚠️ Skill declares ${payload.mcp_configs.length} bundled MCPs but max is ${config.maxBundledMcps}. ` +
+                `Only the first ${config.maxBundledMcps} will be spawned.`
+            );
+        }
+
+        for (const mcpConfig of configsToSpawn) {
+            try {
+                const result = await childMcpManager.spawn(
+                    mcpConfig as McpConfig,
+                    {
+                        source: `skill:${skillName}`,
+                        memory_id: bhivedId,
+                    }
+                );
+                spawnedMcpNames.push(result.name);
+                allBundledTools.push({
+                    mcpName: result.name,
+                    tools: result.tools,
+                });
+            } catch (error: unknown) {
+                const msg = error instanceof Error ? error.message : String(error);
+                mcpErrors.push(
+                    error instanceof ChildMcpPrerequisiteError
+                        ? `⚠️ Bundled MCP '${mcpConfig.name}' not started — ${msg.replace(/\n/g, "; ")}. ` +
+                          (error.missing.length > 0 ? missingEnvHelp() : "")
+                        : `⚠️ Failed to spawn bundled MCP '${mcpConfig.name}': ${msg}`
+                );
+                console.error(
+                    `[initiateSkill] Failed to spawn bundled MCP '${mcpConfig.name}': ${msg}`
+                );
+            }
+        }
+    }
+
+    // 8. Register skill in SkillRegistry (with cleaned keys). The registry keeps
+    //    the most recent few; fully unload whichever skill it pushes out, or its
+    //    MCPs keep running and a later activation would reuse its stale copies.
+    const evicted = skillRegistry.add({
+        memory_id: bhivedId,
+        name: skillName,
+        skill_md: payload.skill_md,
+        scripts: cleanScripts,
+        references: cleanRefs,
+        assets: cleanAssets,
+        mcp_names: spawnedMcpNames,
+        activated_at: new Date(),
+        status: "active",
+        content_hash: contentHash,
+        mcp_hash: mcpHash,
+    });
+    if (evicted) {
+        await childMcpManager.stopBySkill(evicted.name);
+        resourceRegistry.removeBySkill(evicted.name);
+    }
+
+    // 8. No outcome report here: activating says nothing about whether
+    //    the skill works. Scripts exiting 0 or bhived_report_outcome do.
+
+    // 9. Build and return output
+    const output = formatSkillOutput(
+        skillName,
+        bhivedId,
+        payload.skill_md,
+        cleanScripts,
+        cleanRefs,
+        cleanAssets,
+        spawnedMcpNames,
+        mode,
+        allBundledTools,
+        mcpErrors,
+        formatQualitySignals(asRecord(payload.metadata))
+    );
+
+    return {
+        content: [
+            {
+                type: "text" as const,
+                text: output,
+            },
+        ],
+    };
+}
+
 // ── Helpers ──────────────────────────────────────────────────────
 
-type SkillReload = { kind: "updated" } | { kind: "replaced"; previousId: string };
-type SkillOutputMode = { kind: "activation" } | { kind: "reactivation" } | SkillReload;
+type SkillOutputMode =
+    | { kind: "activation" }
+    | { kind: "reactivation" }
+    | { kind: "updated" }
+    | { kind: "replaced"; previousId: string };
 
-/**
- * Fingerprint of everything an agent can observe from a skill. Activation
- * responses carry no version hash, so compare content: any server-side edit
- * (e.g. a repaired description or script) changes it.
- */
-function fingerprint(payload: SkillPayload): string {
-    return createHash("sha256")
-        .update(JSON.stringify([
-            payload.description ?? "",
-            payload.skill_md ?? "",
-            payload.scripts ?? {},
-            payload.references ?? {},
-            payload.assets ?? {},
-            payload.mcp_configs ?? [],
-        ]))
-        .digest("hex");
+/** sha256 of a JSON value with object keys sorted, so key order never matters. */
+function fingerprint(value: unknown): string {
+    const sorted = JSON.stringify(value, (_key, v: unknown) =>
+        v && typeof v === "object" && !Array.isArray(v)
+            ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+            : v
+    );
+    return createHash("sha256").update(sorted).digest("hex");
 }
 
 /**
