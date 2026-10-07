@@ -19,18 +19,10 @@ export function formatWriteResult(
 ): string {
     const lines: string[] = [];
 
-    // The backend saves a supersede of a lesson this key didn't write as a
-    // plain write and returns supersedes_id_linked: null. Don't let a ✅ hide
-    // that the old lesson is still live. ("updated" revises in place and may
-    // not echo the link, so it is not treated as a failed supersede.)
-    const supersedeIgnored =
-        Boolean(supersedesIdRequested) &&
-        !result.supersedes_id_linked &&
-        result.action_performed !== "updated" &&
-        result.action_performed !== "superseded";
+    const ignoredSupersede = supersedeNotApplied(result, supersedesIdRequested);
 
     lines.push(
-        supersedeIgnored
+        ignoredSupersede
             ? `# ⚠️ Lesson ${result.action_performed} — the old lesson was NOT replaced\n`
             : `# ✅ Lesson ${result.action_performed}\n`
     );
@@ -66,7 +58,8 @@ export function formatWriteResult(
 
     if (impact.length > 0) {
         lines.push(`- **graph_impact**: ${impact.join(", ")}`);
-    } else {
+    } else if (result.action_performed !== "corroborated") {
+        // (A corroboration created no lesson of its own, so this doesn't apply.)
         // Per-write ground truth no static description can give: zero graph
         // impact means the lesson can't be found via graph retrieval or corroborated.
         lines.push(
@@ -93,15 +86,39 @@ export function formatWriteResult(
     }
     if (result.supersedes_id_linked) {
         lines.push(`- **supersedes**: \`${result.supersedes_id_linked}\``);
-    } else if (supersedeIgnored) {
-        lines.push(
-            `- **supersedes**: ⚠️ not applied — \`${supersedesIdRequested}\` is unchanged and still active. ` +
-            "You can only supersede lessons written by your own key; this write was saved without replacing it. " +
-            "If the old lesson is wrong, record why with `bhived_write_mistake` so readers see the dispute."
-        );
+    } else if (ignoredSupersede) {
+        lines.push(ignoredSupersede);
     }
 
     return lines.join("\n");
+}
+
+/**
+ * The backend treats a supersede of a lesson this key didn't write as a plain
+ * write and returns supersedes_id_linked: null. Explain what happened instead,
+ * so a ✅ never hides that the old lesson is still live. Null when the
+ * supersede applied, wasn't requested, or was an in-place "updated" revision
+ * (which may not echo the link).
+ */
+function supersedeNotApplied(result: WriteResult, requested: string | undefined): string | null {
+    if (!requested || result.supersedes_id_linked) return null;
+    if (result.action_performed === "updated" || result.action_performed === "superseded") return null;
+
+    const base = `- **supersedes**: ⚠️ not applied — \`${requested}\` is unchanged and still active.`;
+    const ownOnly = "You can only supersede lessons written by your own key.";
+    if (result.action_performed === "corroborated") {
+        return result.memory_id === requested
+            ? `${base} Your write was so close to it that it counted as agreement (a corroboration), ` +
+              "not a correction. If that lesson is wrong, say why with `bhived_write_mistake`."
+            : `${base} ${ownOnly} Your write corroborated a different existing lesson (\`${result.memory_id}\`) instead.`;
+    }
+    if (result.action_performed === "contradicted") {
+        return `${base} ${ownOnly} Your write was stored as a dissenting lesson, so readers already see the dispute.`;
+    }
+    return (
+        `${base} ${ownOnly} This write was saved as a separate lesson. ` +
+        "If the old lesson is wrong, record why with `bhived_write_mistake` so readers see the dispute."
+    );
 }
 
 /**
@@ -114,7 +131,7 @@ export function formatDuplicateError(
     return [
         "# ⚠️ Near-duplicate detected — lesson NOT created\n",
         `- **existing_bhived_id**: \`${duplicateOf}\``,
-        `- **similarity**: ${(similarity * 100).toFixed(0)}%\n`,
+        `- **similarity**: ${Number.isFinite(similarity) ? `${(similarity * 100).toFixed(0)}%` : "unknown"}\n`,
         "**Next steps:**",
         `1. Inspect the existing lesson: use \`bhived_inspect\` with \`bhived_id: "${duplicateOf}"\``,
         "2. If it's YOUR lesson and your version is better: resubmit the same write with " +
