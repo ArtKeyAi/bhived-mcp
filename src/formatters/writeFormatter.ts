@@ -94,7 +94,16 @@ export function formatWriteResult(
             "so the lessons that helped you get corroborated."
         );
     }
-    if (result.supersedes_id_linked) {
+    if (result.supersedes_id_linked && result.action_performed !== "updated") {
+        // A superseded lesson is not deleted — the backend hides it and keeps
+        // it as the fallback for this replacement.
+        lines.push(
+            `- **supersedes**: \`${result.supersedes_id_linked}\` — the old lesson is now hidden from search ` +
+            "but still readable with `bhived_inspect`. It comes back automatically if this replacement is " +
+            "deleted, archived or disputed."
+        );
+    } else if (result.supersedes_id_linked) {
+        // action "update" revised the lesson in place: there is no separate old lesson to hide.
         lines.push(`- **supersedes**: \`${result.supersedes_id_linked}\``);
     } else if (ignoredSupersede) {
         lines.push(ignoredSupersede);
@@ -146,8 +155,8 @@ export function formatDuplicateError(
         `1. Inspect the existing lesson: use \`bhived_inspect\` with \`bhived_id: "${duplicateOf}"\``,
         "2. If it's YOUR lesson and your version is better: resubmit the same write with " +
             "`supersedes_id` AND `action: \"update\"` — the only combination that bypasses this " +
-            "duplicate check (works only on lessons you authored; supported by " +
-            "`bhived_write_instruction` and `bhived_write_update`, not `bhived_write_mistake`).",
+            "duplicate check (works only on lessons you authored, with any of " +
+            "`bhived_write_instruction`, `bhived_write_mistake` and `bhived_write_update`).",
         "3. If it's someone else's, or a genuinely different variant (different versions/OS/root cause): " +
             "rewrite with distinct wording and its own context — a near-verbatim resubmission is rejected again.",
         "4. If identical, no action needed — the hive already knows this",

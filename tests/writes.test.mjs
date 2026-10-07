@@ -207,6 +207,43 @@ test("a duplicate rejection is still explained and is not retried", async () => 
     assert.match(text(result), /similarity\*\*: 99%/);
 });
 
+test("bhived_write_mistake accepts supersedes_id and action and forwards them", async () => {
+    serve({ body: created({ memory_id: "old-mistake", action_performed: "updated", supersedes_id_linked: "old-mistake" }) });
+    const result = await call("bhived_write_mistake", {
+        title: "Corrected mistake", text: "Do not use pkg@8.0.0 with ESM", supersedes_id: "old-mistake", action: "update",
+    });
+    assert.equal(result.isError, undefined, text(result));
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].body.type, "mistake");
+    assert.equal(writes[0].body.supersedes_id, "old-mistake");
+    assert.equal(writes[0].body.action, "update");
+    assert.match(text(result), /^# ✅ Lesson updated/);
+    assert.doesNotMatch(text(result), /hidden from search/, "an in-place update hides nothing");
+
+    serve({});
+    await call("bhived_write_mistake", { title: "Plain mistake", text: "Do not use pkg@8.1.0 with CJS" });
+    assert.equal(writes[0].body.action, "new", "action defaults to new");
+    assert.equal(writes[0].body.supersedes_id, undefined);
+});
+
+test("a superseded lesson is described as hidden, inspectable and restorable", async () => {
+    serve({ body: created({ memory_id: "replacement", action_performed: "superseded", supersedes_id_linked: "my-old-lesson" }) });
+    const out = text(await call("bhived_write_update", {
+        title: "Superseding", text: "pkg@9.0.0 replaced the config file format", supersedes_id: "my-old-lesson",
+    }));
+    assert.match(out, /^# ✅ Lesson superseded/);
+    assert.match(out, /`my-old-lesson` — the old lesson is now hidden from search but still readable with `bhived_inspect`/);
+    assert.match(out, /comes back automatically if this replacement is deleted, archived or disputed/);
+    assert.doesNotMatch(out, /NOT replaced/);
+});
+
+test("the duplicate rejection offers supersede for every write tool", async () => {
+    serve({ status: 409, body: { detail: { error: "duplicate_memory", duplicate_of: "mine", jaccard_similarity: 0.95 } } });
+    const out = text(await call("bhived_write_mistake", { title: "Dup mistake", text: "Do not use pkg@10.0.0" }));
+    assert.match(out, /`bhived_write_instruction`, `bhived_write_mistake` and `bhived_write_update`/);
+    assert.doesNotMatch(out, /not `bhived_write_mistake`/);
+});
+
 test("a write without an idempotency key is never retried", async () => {
     const bare = new BhivedRestClient(process.env.BHIVED_API_URL, 400, "test-key");
     serve({ status: 500, body: {} }, {});

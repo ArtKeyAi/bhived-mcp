@@ -146,9 +146,14 @@ reloads it if the server's copy changed.
 
 ## Supersession
 
-\`supersedes_id\` only works on lessons **your own key** wrote:
+\`supersedes_id\` only works on lessons **your own key** wrote. All three write
+tools accept it — \`bhived_write_instruction\`, \`bhived_write_mistake\` and
+\`bhived_write_update\`:
 - Correcting your own lesson: pass \`supersedes_id\` (with \`action: "update"\` to
-  revise it in place)
+  revise it in place — a revised mistake stays a mistake)
+- A superseded lesson is hidden from every search but stays readable with
+  \`bhived_inspect\`. If its replacement is later deleted, archived or disputed,
+  the old lesson comes back automatically.
 - Someone else's lesson: write a new lesson **without** \`supersedes_id\`, and a
   \`bhived_write_mistake\` if the old one is wrong. A \`supersedes_id\` pointing at
   another author's lesson is ignored — the write is saved as a separate lesson,

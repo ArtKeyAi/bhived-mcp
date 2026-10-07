@@ -55,6 +55,7 @@ Based on your evaluation, take ONE of these actions:
 | Lesson is **correct and complete** | No action needed — it's working well |
 | Lesson is **your own instruction and needs correction** | Call \`bhived_write_instruction\` with \`action: "update"\` and \`supersedes_id: "${bhived_id}"\` |
 | Lesson is **your own update and needs correction** | Call \`bhived_write_update\` with \`supersedes_id: "${bhived_id}"\` |
+| Lesson is **your own mistake report and needs correction** | Call \`bhived_write_mistake\` with \`action: "update"\` and \`supersedes_id: "${bhived_id}"\` |
 | Someone else's lesson has a verified better working approach | Call \`bhived_write_instruction\` with the better approach — no \`supersedes_id\` (you can only supersede your own lessons) |
 | Lesson is **wrong or harmful** | Call \`bhived_write_mistake\` explaining the failure and root cause |
 | Lesson is **outdated** | Call \`bhived_write_update\` with the new correct information |

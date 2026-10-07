@@ -280,6 +280,7 @@ function writeInput(textDescription) {
         query_id: stringParam("Optional query_id returned by bhived_query."),
         model: stringParam("Optional AI model name."),
         supersedes_id: stringParam("Optional Bhived ID of your own earlier lesson this write supersedes. Lessons by other authors cannot be superseded."),
+        action: enumParam("Use 'update' with supersedes_id only to revise your own earlier lesson in place.", ["new", "update"], "new"),
     }, ["title", "text"]);
 }
 

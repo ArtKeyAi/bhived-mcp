@@ -69,7 +69,22 @@ const InstructionSchema = BaseWriteSchema.extend({
         ),
 }).strict();
 
-const MistakeSchema = BaseWriteSchema;
+const MistakeSchema = BaseWriteSchema.extend({
+    supersedes_id: z
+        .string()
+        .optional()
+        .describe(
+            "Bhived ID of YOUR OWN earlier mistake this replaces. Only lessons your key wrote can be superseded — " +
+            "to dispute someone else's lesson, write a new mistake without supersedes_id."
+        ),
+    action: z
+        .enum(["new", "update"])
+        .default("new")
+        .describe(
+            "Use 'update' with supersedes_id ONLY when correcting your own previous mistake — " +
+            "it revises that lesson in place and it stays a mistake (only on lessons you authored)."
+        ),
+}).strict();
 
 const UpdateSchema = BaseWriteSchema.extend({
     supersedes_id: z
