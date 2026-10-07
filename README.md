@@ -500,6 +500,21 @@ Lessons, skills, and MCPs use one agent-facing identifier: `bhived_id`.
 | `bhived_run_script` | Execute an admin-curated script from an activated skill in a temporary local subprocess. |
 | `bhived_use_tool` | Proxy a tool call to an activated child MCP server. |
 | `bhived_stop_mcp` | Stop a running child MCP server and free resources. |
+| `bhived_report_outcome` | Report whether an activated skill or MCP actually worked, so success rates reflect real use. |
+
+### API Keys For Child MCPs
+
+Some MCPs need API keys, for example `BRAVE_API_KEY`. Query results list them under **Requires** and show whether each one is already set on your machine. When an MCP starts, Bhived passes it only the variables it declares, never your whole environment. It looks for each one in:
+
+1. the environment `bhived-mcp` runs in: the `env` block of your agent's Bhived MCP config, or the shell you start the agent from;
+2. `~/.bhived/secrets.json`, a flat `{ "BRAVE_API_KEY": "..." }` object. Change the path with `BHIVED_SECRETS_FILE`. The file is read again each time an MCP starts, so you don't need to restart after editing it;
+3. the default the MCP declares, if it has one.
+
+If a required variable is missing, the MCP is not started and the agent sees a message like `Missing BRAVE_API_KEY (secret): Brave Search API key`. Header requirements are for remote deployments only. They are shown for information, because Bhived runs MCPs locally over stdio.
+
+### Success Rates
+
+The success rate shown for a capability counts real outcomes, not activations. An MCP counts as a success when it starts and lists its tools, and as a failure when it fails to start. A missing local key or command is not counted against it. A skill counts as a success when one of its scripts exits with code 0, or when the agent reports the result with `bhived_report_outcome`.
 
 ## MCP Resources And Prompts
 
@@ -605,6 +620,7 @@ Authentication is usually handled by `npx bhived setup`. The MCP server reads cr
 | `BHIVED_MAX_BUNDLED_MCPS` | env | Maximum bundled MCPs per skill. Defaults to `3`. |
 | `BHIVED_SCRIPT_TIMEOUT` | env | Default skill script timeout in milliseconds. Defaults to `30000`. |
 | `BHIVED_HEALTH_INTERVAL` | env | Child MCP health interval in milliseconds. Defaults to `30000`. |
+| `BHIVED_SECRETS_FILE` | env | Path to the JSON file that holds API keys for child MCPs. Defaults to `~/.bhived/secrets.json`. |
 | `ALLOWED_ORIGINS` | env | Comma-separated allowlist for HTTP transport origin validation. |
 | `HOST` | env | HTTP bind host. Defaults to `127.0.0.1`. |
 | `PORT` | env | HTTP transport port when not provided with `--port`. Defaults to `3001`. |
@@ -684,6 +700,8 @@ pdocs/
 - Agent config files do not store your API key.
 - Credentials are stored locally in `~/.bhived/config.json` after browser authentication.
 - Child MCPs and skill scripts run locally because they are capabilities activated by your agent.
+- A child MCP only receives the variables it declares, plus basic system variables such as `PATH`. Your other environment variables are never passed to it.
+- `~/.bhived/secrets.json` holds plain-text API keys. Make it readable only by you, for example with `chmod 600 ~/.bhived/secrets.json`.
 - Skill scripts are admin-curated, but they can execute code on your machine.
 - Use `bhived_list_active` to see what capabilities are loaded.
 - Use `bhived_stop_mcp` to stop child MCP processes when they are no longer needed.
@@ -698,6 +716,7 @@ pdocs/
 | API key should not be in agent config | This is expected. Agents read credentials from `~/.bhived/config.json`. |
 | Manual client setup fails | Confirm the client uses `command: "npx"` and `args: ["-y", "bhived-mcp@latest"]`. |
 | HTTP requests are rejected by origin checks | Add the client origin to `ALLOWED_ORIGINS`. |
+| `Missing BRAVE_API_KEY (secret)` when starting an MCP | Add the key to `~/.bhived/secrets.json`, or to the `env` block of your agent's Bhived MCP config, then activate the MCP again. |
 
 ## Resources
 
