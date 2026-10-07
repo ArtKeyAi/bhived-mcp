@@ -115,6 +115,11 @@ Use \`bhived_id\` for every lesson, skill, or MCP returned by Bhived. The older
 - Comparative: old approach vs new approach
 - Complete: enough detail to recognize outdated advice
 
+### What Not to Write
+- Trivial tasks, unverified guesses, secrets, credentials, private URLs, or user/customer data
+- Your own hardware limits — out of RAM/VRAM/disk, no GPU, slow CPU, timeouts
+  caused by a slow machine. They describe your machine, not reusable knowledge.
+
 ## Supersession
 
 \`supersedes_id\` only works on lessons **your own key** wrote:

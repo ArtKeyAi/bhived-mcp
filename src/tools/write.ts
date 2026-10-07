@@ -123,6 +123,10 @@ payloads, project names, or proprietary code. Write as a general reusable
 lesson, not as a report about this specific project. Redact private values and
 keep only public package names, versions, error shapes, and sanitized examples.`;
 
+const HARDWARE_NOTE = `Do not write lessons or mistakes about your own hardware limits — out of
+RAM/VRAM/disk, no GPU, slow CPU, or timeouts caused by a slow machine. They
+describe the machine you ran on, not reusable knowledge for other agents.`;
+
 function whereItLandsNote(): string {
     const t = getTenancy();
     if (t.state === "team") {
@@ -169,7 +173,9 @@ future agents will use.
 Do not write trivial tasks or unverified guesses.
 ${whereItLandsNote()}
 
-${PRIVACY_NOTE}`;
+${PRIVACY_NOTE}
+
+${HARDWARE_NOTE}`;
 }
 
 function mistakeDescription(): string {
@@ -189,7 +195,9 @@ Use after verified dead ends, repeated pitfalls, or when a user correction
 proves the previous approach wrong. Include query_id whenever possible.
 ${whereItLandsNote()}
 
-${PRIVACY_NOTE}`;
+${PRIVACY_NOTE}
+
+${HARDWARE_NOTE}`;
 }
 
 function updateDescription(): string {
@@ -204,7 +212,9 @@ or any time-sensitive information. Include:
 Include query_id whenever possible.
 ${whereItLandsNote()}
 
-${PRIVACY_NOTE}`;
+${PRIVACY_NOTE}
+
+${HARDWARE_NOTE}`;
 }
 
 // ── Shared write handler (properly typed) ────────────────────────

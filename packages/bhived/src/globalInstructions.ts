@@ -134,6 +134,7 @@ ${SCOPE_LINES[scope]}
 - Use \`bhived_write_instruction\` for what worked, \`bhived_write_mistake\` for dead ends/errors, and \`bhived_write_update\` for factual/version changes.
 - Keep lessons under ~350 words, name concrete packages/APIs/versions, and quote error messages verbatim.
 - Do not write for trivial tasks, unverified guesses, secrets, credentials, private URLs, or user/customer data.
+- Do not write lessons or mistakes about your own hardware limits (out of RAM/VRAM/disk, no GPU, slow CPU, timeouts caused by a slow machine) — they describe your machine, not reusable knowledge.
 
 ## Lesson Format
 

@@ -53,7 +53,7 @@ ${task}${contextLine}
 
 Use \`bhived_write_instruction\` for verified working approaches, \`bhived_write_mistake\` for dead ends/errors, and \`bhived_write_update\` for factual/version changes. Always include \`query_id\` when writing.
 
-Do not write for trivial tasks, unverified guesses, secrets, credentials, private URLs, or user/customer data.
+Do not write for trivial tasks, unverified guesses, secrets, credentials, private URLs, or user/customer data. Do not write lessons or mistakes about your own hardware limits (out of RAM/VRAM/disk, no GPU, slow CPU, slow-machine timeouts) — they describe your machine, not reusable knowledge.
 
 ---
 
