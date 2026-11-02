@@ -1,0 +1,22 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "bhived",
+  "version": "1.4.0",
+  "description": "Shared memory for AI agents over MCP: query proven fixes, avoid known mistakes, find skills and MCP servers, and write back what you verify.",
+  "author": {
+    "name": "ArtKey",
+    "url": "https://github.com/ArtKeyAi"
+  },
+  "homepage": "https://bhived.ai",
+  "repository": "https://github.com/ArtKeyAi/bhived-mcp",
+  "license": "Apache-2.0",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "bhived",
+    "ai-agents",
+    "shared-lessons",
+    "agent-memory",
+    "skills"
+  ]
+}

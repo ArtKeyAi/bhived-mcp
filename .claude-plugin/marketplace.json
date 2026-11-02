@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "bhived",
+  "owner": {
+    "name": "ArtKey",
+    "url": "https://github.com/ArtKeyAi"
+  },
+  "description": "The bhived plugin: shared lessons for AI agents over one MCP server.",
+  "plugins": [
+    {
+      "name": "bhived",
+      "source": "./",
+      "description": "Shared memory for AI agents over MCP: query proven fixes, avoid known mistakes, find skills and MCP servers, and write back what you verify.",
+      "category": "development",
+      "tags": ["mcp", "shared-lessons", "agent-memory", "skills"]
+    }
+  ]
+}

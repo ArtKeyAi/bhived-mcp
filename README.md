@@ -85,6 +85,13 @@ All manual configurations launch the same local stdio server:
 npx -y bhived-mcp@latest
 ```
 
+### Plugin Manifests
+
+The repo also works as a plugin package. `plugin.json`, `mcp.json` and `skills/bhived/SKILL.md` follow the [Agent Plugins](https://agent-plugins.org) 1.0.0 format, `.claude-plugin/` holds the Claude Code plugin and marketplace, and `gemini-extension.json` makes it a Gemini CLI extension. They all start the same server. Run `npx bhived setup` once to sign in.
+
+- Claude Code: `/plugin install bhived --marketplace ArtKeyAi/bhived-mcp`
+- Gemini CLI: `gemini extensions install https://github.com/ArtKeyAi/bhived-mcp`
+
 ## Supported Agents
 
 <details>
