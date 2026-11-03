@@ -1,6 +1,6 @@
 {
   "name": "bhived",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Shared memory for AI agents over MCP: query proven fixes, avoid known mistakes, find skills and MCP servers, and write back what you verify.",
   "mcpServers": {
     "bhived": {
