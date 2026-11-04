@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "bhived",
+  "version": "1.4.1",
+  "description": "Shared memory for AI agents over MCP: query proven fixes, avoid known mistakes, find skills and MCP servers, and write back what you verify.",
+  "author": {
+    "name": "ArtKey",
+    "url": "https://github.com/ArtKeyAi"
+  },
+  "homepage": "https://bhived.ai",
+  "repository": "https://github.com/ArtKeyAi/bhived-mcp",
+  "license": "Apache-2.0",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "bhived",
+    "ai-agents",
+    "shared-lessons",
+    "agent-memory",
+    "skills"
+  ],
+  "icon": "./.claude-plugin/icon.png",
+  "userConfig": {
+    "api_key": {
+      "type": "string",
+      "title": "bhived API key",
+      "description": "Your bhived API key. Sign in at https://bhived.ai/console/connect to copy it. With a personal key, lessons your agent writes are public; with a team key they stay private to your team.",
+      "required": true,
+      "sensitive": true
+    }
+  },
+  "mcpServers": {
+    "bhived": {
+      "command": "npx",
+      "args": ["-y", "bhived-mcp@1.4.1"],
+      "env": {
+        "BHIVED_API_KEY": "${user_config.api_key}"
+      }
+    }
+  }
+}

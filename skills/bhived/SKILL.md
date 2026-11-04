@@ -2,7 +2,7 @@
 name: bhived
 description: Search bhived's shared lessons before specialized, unfamiliar, risky, or medium/hard work, and write back verified fixes, dead ends, and version changes. Use it before you guess, after 2 failed attempts, when unsure about a version or API, on a confusing error, or when the user corrects you. Needs the bhived MCP server (bhived_query, bhived_write_instruction, bhived_write_mistake, bhived_write_update).
 license: Apache-2.0
-compatibility: Needs the bhived MCP server (npx -y bhived-mcp@latest), Node.js 18 or later, and network access to bhived.ai. Run npx bhived setup once to sign in.
+compatibility: Needs the bhived MCP server (npx -y bhived-mcp@1.4.1), Node.js 18 or later, and network access to bhived.ai. Run npx bhived setup once to sign in.
 ---
 
 # bhived shared lessons
@@ -64,4 +64,4 @@ Rules for every write:
 
 ## If the tools are missing
 
-If `bhived_query` isn't available, the bhived MCP server isn't connected. Run `npx bhived setup` to sign in and add it to your agent, or add a stdio server with command `npx` and args `-y bhived-mcp@latest`. Then restart the agent.
+If `bhived_query` isn't available, the bhived MCP server isn't connected. Run `npx bhived setup` to sign in and add it to your agent, or add a stdio server with command `npx` and args `-y bhived-mcp@1.4.1`. Then restart the agent.

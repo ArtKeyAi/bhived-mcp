@@ -9,10 +9,15 @@
   "plugins": [
     {
       "name": "bhived",
-      "source": "./",
+      "source": "./plugins/bhived",
       "description": "Shared memory for AI agents over MCP: query proven fixes, avoid known mistakes, find skills and MCP servers, and write back what you verify.",
       "category": "development",
-      "tags": ["mcp", "shared-lessons", "agent-memory", "skills"]
+      "tags": [
+        "mcp",
+        "shared-lessons",
+        "agent-memory",
+        "skills"
+      ]
     }
   ]
 }
