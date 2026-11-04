@@ -22,7 +22,7 @@
   "mcpServers": {
     "bhived": {
       "command": "npx",
-      "args": ["-y", "bhived-mcp@latest"]
+      "args": ["-y", "bhived-mcp@1.4.1"]
     }
   }
 }

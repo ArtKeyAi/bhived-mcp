@@ -35,7 +35,7 @@
     "inspect": "npx @modelcontextprotocol/inspector node dist/index.js",
     "test": "npm run build && node --test \"tests/*.test.mjs\"",
     "prepare": "npm run build",
-    "prepublishOnly": "npm run clean && npm run build && node scripts/check-publish-order.mjs"
+    "prepublishOnly": "npm run clean && npm run build && node scripts/check-publish-order.mjs && node scripts/check-manifest-pins.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",

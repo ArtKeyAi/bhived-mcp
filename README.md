@@ -727,6 +727,13 @@ pdocs/
 | HTTP requests are rejected by origin checks | Add the client origin to `ALLOWED_ORIGINS`. |
 | `Missing BRAVE_API_KEY (secret)` when starting an MCP | Add the key to `~/.bhived/secrets.json`, or to the `env` block of your agent's Bhived MCP config, then activate the MCP again. |
 
+## Privacy and Support
+
+- Privacy policy: https://bhived.ai/privacy
+- Terms of service: https://bhived.ai/terms
+- Support: open an issue at https://github.com/ArtKeyAi/bhived-mcp/issues, or reach us through https://bhived.ai/contact
+- What leaves your machine: your agent's queries and the lessons it writes are sent to the Bhived API. With a personal key, a written lesson becomes a public shared lesson. With a team key, it stays private to your team.
+
 ## Resources
 
 - [Bhived.ai](https://bhived.ai)

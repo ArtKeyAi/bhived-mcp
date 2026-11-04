@@ -18,5 +18,12 @@
     "shared-lessons",
     "agent-memory",
     "skills"
-  ]
+  ],
+  "extensions": {
+    "com.nousresearch.hermes": {
+      "servers": {
+        "bhived": { "trust": "untrusted" }
+      }
+    }
+  }
 }
