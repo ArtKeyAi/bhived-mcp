@@ -198,3 +198,73 @@ test("cleanup never follows a child or replacement root junction into another di
         await rm(outside, { recursive: true, force: true });
     }
 });
+
+// ── Script environment (Hermes catalog review, 2026-11-05) ─────────────────
+// Skill scripts are third-party code: they must never see the server's own
+// environment (BHIVED_API_KEY, or any secret in this server's env block).
+async function withEnv(vars, fn) {
+    const saved = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
+    for (const [k, v] of Object.entries(vars)) {
+        if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+    try { return await fn(); } finally {
+        for (const [k, v] of Object.entries(saved)) {
+            if (v === undefined) delete process.env[k]; else process.env[k] = v;
+        }
+    }
+}
+const noSecretsFile = join(tmpdir(), "bhived-test-no-secrets.json");
+
+test("scripts get a minimal env: no BHIVED_* and no other server secrets", async () => {
+    await withEnv({
+        BHIVED_API_KEY: "bhv-test-key-must-not-leak",
+        SOME_SERVER_SECRET: "server-secret-must-not-leak",
+        BHIVED_SECRETS_FILE: noSecretsFile,
+    }, async () => {
+        const result = await run(skill({
+            "env.mjs": emit("{keys: Object.keys(process.env), root: process.env.BHIVED_SKILL_ROOT, path: Boolean(process.env.PATH || process.env.Path)}"),
+        }));
+        assert.equal(result.isError, false, text(result));
+        const out = output(result);
+        assert.deepEqual(out.keys.filter((k) => /^BHIVED_/i.test(k)), ["BHIVED_SKILL_ROOT"]);
+        assert.ok(!out.keys.includes("SOME_SERVER_SECRET"));
+        assert.ok(out.root, "BHIVED_SKILL_ROOT is set");
+        assert.ok(out.path, "PATH is passed");
+        assert.ok(!text(result).includes("must-not-leak"));
+    });
+});
+
+test("declared variables are passed and redacted in output; declared BHIVED_* is dropped", async () => {
+    await withEnv({
+        SKILL_DECLARED_TOKEN: "declared-token-value-1234",
+        BHIVED_API_KEY: "bhv-test-key-must-not-leak",
+        BHIVED_SECRETS_FILE: noSecretsFile,
+    }, async () => {
+        const result = await run(skill(
+            { "tok.mjs": emit("{tok: process.env.SKILL_DECLARED_TOKEN ?? null, key: process.env.BHIVED_API_KEY ?? null}") },
+            { env_requirements: [
+                { name: "SKILL_DECLARED_TOKEN", required: true, secret: true },
+                { name: "BHIVED_API_KEY", required: true },
+            ] },
+        ));
+        assert.equal(result.isError, false, text(result));
+        const out = output(result);
+        assert.equal(out.tok, "[REDACTED SKILL_DECLARED_TOKEN]", "passed to the script, redacted in its output");
+        assert.equal(out.key, null);
+        assert.ok(!text(result).includes("declared-token-value-1234"));
+    });
+});
+
+test("a missing required declared variable blocks the run before anything executes", async () => {
+    await withEnv({ SKILL_MISSING_VAR: undefined, BHIVED_SECRETS_FILE: noSecretsFile }, async () => {
+        const before = await tempRuns();
+        const result = await run(skill(
+            { "never.mjs": emit("{ran: true}") },
+            { env_requirements: [{ name: "SKILL_MISSING_VAR", required: true, description: "Token for the service" }] },
+        ));
+        assert.equal(result.isError, true);
+        assert.match(text(result), /Missing SKILL_MISSING_VAR: Token for the service/);
+        assert.doesNotMatch(text(result), /RESULT:/);
+        assert.deepEqual(await tempRuns(), before);
+    });
+});

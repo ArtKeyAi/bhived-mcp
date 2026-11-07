@@ -16,7 +16,7 @@ import { skillRegistry } from "../registries/skillRegistry.js";
 import { resourceRegistry, ResourceRegistry } from "../registries/resourceRegistry.js";
 import { childMcpManager } from "../childMcp/manager.js";
 import { childMcpRegistry } from "../registries/childMcpRegistry.js";
-import { ChildMcpPrerequisiteError, missingEnvHelp } from "../childMcp/env.js";
+import { ChildMcpPrerequisiteError, missingEnvHelp, normalizeRequirements } from "../childMcp/env.js";
 import type { ChildMcpTool } from "../registries/childMcpRegistry.js";
 import type { McpConfig, SkillPayload } from "../client/types.js";
 import { config } from "../config.js";
@@ -305,6 +305,10 @@ async function loadSkill(bhivedId: string, payload: SkillPayload) {
         references: cleanRefs,
         assets: cleanAssets,
         mcp_names: spawnedMcpNames,
+        // Untrusted payload: keep well-formed names only, never BHIVED_*.
+        env_requirements: normalizeRequirements(
+            payload.env_requirements ?? payload.metadata?.env_requirements
+        ),
         activated_at: new Date(),
         status: "active",
         content_hash: contentHash,

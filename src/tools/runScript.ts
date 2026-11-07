@@ -19,8 +19,47 @@ import { spawn } from "node:child_process";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { skillRegistry } from "../registries/skillRegistry.js";
 import { config } from "../config.js";
+import { getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { materializeSkillBundle, type ScriptBundle } from "./skillBundle.js";
 import { reportOutcome } from "./reportOutcome.js";
+import {
+    formatMissingEnv,
+    missingEnvHelp,
+    redactSecrets,
+    resolveChildEnv,
+    type ResolvedChildEnv,
+} from "../childMcp/env.js";
+import type { EnvRequirement } from "../client/types.js";
+
+/**
+ * System variables script runtimes need beyond the MCP SDK's safe default list
+ * (PATH, HOME/USERPROFILE, ...): temp dirs, locale, and on Windows the shell
+ * and program locations that python/node/powershell look up.
+ */
+const EXTRA_SYSTEM_VARS = process.platform === "win32"
+    ? ["COMSPEC", "PATHEXT", "WINDIR", "TMP", "PROGRAMDATA", "PROGRAMFILES(X86)", "COMMONPROGRAMFILES", "PSMODULEPATH", "NUMBER_OF_PROCESSORS"]
+    : ["TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "TZ"];
+
+/**
+ * The environment a skill script runs with. Skill scripts are third-party
+ * code, so they never get the server's whole environment (which holds
+ * BHIVED_API_KEY and anything else the user put in this server's env block):
+ * only system variables, the variables the skill declares (resolved like a
+ * child MCP's, with BHIVED_* excluded), and BHIVED_SKILL_ROOT.
+ */
+export function buildScriptEnv(resolved: ResolvedChildEnv, skillRoot: string): Record<string, string> {
+    const env: Record<string, string> = { ...getDefaultEnvironment() };
+    for (const name of EXTRA_SYSTEM_VARS) {
+        const value: unknown = process.env[name];
+        if (typeof value === "string" && value !== "" && !value.startsWith("()")) env[name] = value;
+    }
+    return { ...env, ...resolved.env, BHIVED_SKILL_ROOT: skillRoot };
+}
+
+/** Resolve the variables a skill declares, the same way a child MCP's are resolved. */
+export function resolveScriptEnv(envRequirements: EnvRequirement[] | undefined): ResolvedChildEnv {
+    return resolveChildEnv({ env_requirements: envRequirements });
+}
 
 const RunScriptInputSchema = z.object({
     skill: z
@@ -58,6 +97,10 @@ The temporary skill directory includes SKILL.md, scripts/, references/ and asset
 with their relative paths preserved. BHIVED_SKILL_ROOT points to that directory.
 The working directory is the one bhived-mcp was started in (normally the agent's
 project directory). The temporary skill directory is removed when execution finishes.
+
+The script gets a minimal environment: system variables (PATH, HOME, temp and
+locale), BHIVED_SKILL_ROOT, and only the variables the skill declares. bhived's own
+settings (BHIVED_*) and other secrets in this server's environment are never passed.
 
 Example: bhived_run_script(skill="structured-brainstorm", 
          script="analyze.py", args="--input ideas.json")`;
@@ -229,10 +272,26 @@ export function registerRunScriptTool(server: McpServer): void {
                     };
                 }
 
-                // 3. Preserve sibling imports and resource paths for this run.
+                // 3. Resolve the variables the skill declares. A missing required one
+                //    blocks the run with a clear message instead of a failing script.
+                const resolved = resolveScriptEnv(skill.env_requirements);
+                if (resolved.missing.length > 0) {
+                    return {
+                        content: [
+                            {
+                                type: "text" as const,
+                                text: `❌ Cannot run '${params.script}': skill '${params.skill}' needs\n` +
+                                    `${formatMissingEnv(resolved.missing)}\n\n${missingEnvHelp()}`,
+                            },
+                        ],
+                        isError: true,
+                    };
+                }
+
+                // 4. Preserve sibling imports and resource paths for this run.
                 bundle = await materializeSkillBundle(skill, params.script);
 
-                // 4. Detect runtime and build command
+                // 5. Detect runtime and build command
                 const runtime = detectRuntime(params.script);
 
                 // If runtime detection failed (e.g. .sh on Windows without Git Bash)
@@ -260,15 +319,21 @@ export function registerRunScriptTool(server: McpServer): void {
                     ...(params.args ? params.args.split(" ") : []),
                 ];
 
-                // 5. Execute with timeout
+                // 6. Execute with timeout
                 const timeout = Math.min(params.timeout ?? config.scriptTimeout, 120000);
-                const result = await executeScript(
+                const raw = await executeScript(
                     runtime.command,
                     execArgs,
                     params.input_data,
                     timeout,
-                    bundle.root
+                    buildScriptEnv(resolved, bundle.root)
                 );
+                // Never echo a declared secret the script printed (e.g. "Invalid key: <value>").
+                const result = {
+                    ...raw,
+                    stdout: redactSecrets(raw.stdout, resolved),
+                    stderr: redactSecrets(raw.stderr, resolved),
+                };
 
                 // A clean exit is real evidence the skill works. Non-zero exits are
                 // not reported: they are usually wrong arguments, not a broken skill.
@@ -276,7 +341,7 @@ export function registerRunScriptTool(server: McpServer): void {
                     void reportOutcome(skill.memory_id, true, "runScript");
                 }
 
-                // 6. Format and return output
+                // 7. Format and return output
                 const header = `## ⚡ Script Output: ${params.script}\n**Skill**: ${params.skill} · **Exit code**: ${result.exitCode} · **Duration**: ${result.durationMs}ms\n\n---\n\n`;
                 const output = result.stdout
                     ? `### stdout\n\`\`\`\n${result.stdout}\n\`\`\`\n`
@@ -332,14 +397,15 @@ function executeScript(
     args: string[],
     inputData?: string,
     timeout = 30000,
-    skillRoot?: string
+    env: Record<string, string> = {}
 ): Promise<ScriptResult> {
     return new Promise((resolve, reject) => {
         const startTime = Date.now();
         const child = spawn(command, args, {
             timeout,
             stdio: ["pipe", "pipe", "pipe"],
-            env: { ...process.env, BHIVED_SKILL_ROOT: skillRoot },
+            // Minimal env from buildScriptEnv — never the server's process.env.
+            env,
             windowsHide: true,
         });
 

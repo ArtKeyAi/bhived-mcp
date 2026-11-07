@@ -7,6 +7,7 @@
  */
 
 import { config } from "../config.js";
+import type { EnvRequirement } from "../client/types.js";
 
 export interface SkillEntry {
     /** The memory_id from the backend */
@@ -23,6 +24,8 @@ export interface SkillEntry {
     assets: Record<string, string>;
     /** Names of child MCPs spawned for this skill */
     mcp_names: string[];
+    /** Variables the skill's scripts declare; the only non-system env a script gets. */
+    env_requirements?: EnvRequirement[];
     /** When the skill was activated */
     activated_at: Date;
     /** Fingerprint of the activated payload; a different one means the server copy changed. */

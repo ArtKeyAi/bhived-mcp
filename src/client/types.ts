@@ -324,6 +324,8 @@ export interface SkillPayload {
     references: Record<string, string>;    // filename → content
     assets: Record<string, string>;        // filename → content
     mcp_configs: McpConfig[];              // bundled MCPs
+    /** Variables the skill's scripts need; resolved like a child MCP's, BHIVED_* never passed. */
+    env_requirements?: EnvRequirement[];
     compatibility?: Record<string, unknown>;
     license?: string;
     metadata?: Record<string, unknown>;

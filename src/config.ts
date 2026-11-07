@@ -67,6 +67,12 @@ function parseNonNegativeInt(raw: string | undefined, fallback: number): number 
     return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
 
+function usableKey(value: string | undefined): string | undefined {
+    const trimmed = value?.trim();
+    if (!trimmed || trimmed.startsWith("${")) return undefined;
+    return trimmed;
+}
+
 export function loadConfig(): BhivedConfig {
     const transportArg = process.argv.find((a) => a.startsWith("--transport="));
     const portArg = process.argv.find((a) => a.startsWith("--port="));
@@ -80,7 +86,14 @@ export function loadConfig(): BhivedConfig {
     // supplied out-of-band (--key / BHIVED_API_KEY) and differs from the one the
     // CLI stored, the stored team/plan would be misleading, so we only trust it
     // when the active key matches the stored key (or no explicit key was given).
-    const activeKey = keyArg ?? process.env.BHIVED_API_KEY ?? storedConfig?.apiKey;
+    // An empty value, or a plugin placeholder the host left unexpanded
+    // ("${user_config.api_key}"), means "not set", so the stored key still applies.
+    // CLAUDE_PLUGIN_OPTION_API_KEY is how Claude Code passes the plugin's api_key option.
+    const activeKey =
+        usableKey(keyArg) ??
+        usableKey(process.env.BHIVED_API_KEY) ??
+        usableKey(process.env.CLAUDE_PLUGIN_OPTION_API_KEY) ??
+        storedConfig?.apiKey;
     const tenancyTrusted =
         storedConfig?.apiKey !== undefined && activeKey === storedConfig.apiKey;
 

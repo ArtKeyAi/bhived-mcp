@@ -4,7 +4,7 @@
     "bhived": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "bhived-mcp@1.4.1"]
+      "args": ["-y", "bhived-mcp@1.4.2"]
     }
   }
 }
