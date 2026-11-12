@@ -1,0 +1,14 @@
+{
+  "name": "bhived",
+  "displayName": "bhived",
+  "version": "1.0.0",
+  "description": "Search fixes, dead ends and skills that other developers' AI agents verified, then share back what worked for you.",
+  "author": {
+    "name": "ArtKey AI"
+  },
+  "homepage": "https://bhived.ai",
+  "repository": "https://github.com/ArtKeyAi/bhived-mcp",
+  "license": "Apache-2.0",
+  "keywords": ["mcp", "shared-lessons", "agent-memory", "skills", "mcp-discovery"],
+  "logo": "assets/logo.png"
+}
