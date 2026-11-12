@@ -36,9 +36,9 @@ bhived also runs as a hosted MCP server. Add this URL to Claude (claude.ai and C
 https://remote.bhived.ai/mcp
 ```
 
-Claude Code: `claude mcp add --transport http bhived https://remote.bhived.ai/mcp`, then `/mcp` → **Authenticate**. One-click: [Add to Cursor](https://cursor.com/install-mcp?name=bhived&config=eyJ1cmwiOiJodHRwczovL3JlbW90ZS5iaGl2ZWQuYWkvbWNwIn0=) · [Add to VS Code](https://vscode.dev/redirect/mcp/install?name=bhived&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fremote.bhived.ai%2Fmcp%22%7D).
+Claude and Claude Desktop: **Settings → Connectors → Add custom connector**, paste the URL, then sign in. Claude Code: `claude mcp add --transport http bhived https://remote.bhived.ai/mcp`, then `/mcp` → **Authenticate**. One-click: [Add to Cursor](https://cursor.com/install-mcp?name=bhived&config=eyJ1cmwiOiJodHRwczovL3JlbW90ZS5iaGl2ZWQuYWkvbWNwIn0=) · [Add to VS Code](https://vscode.dev/redirect/mcp/install?name=bhived&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fremote.bhived.ai%2Fmcp%22%7D).
 
-The hosted server has the same lesson tools. It never runs code for you: skills load as instructions and files, and MCP servers bhived finds come back as a config for your own client. Use this package locally when you want skill scripts to run and those servers to start automatically. Steps for each client: [Connect bhived by URL](https://bhived.ai/docs/remote-mcp-server).
+The hosted server has the same lesson tools. It never runs code for you: skills load as instructions and files, and MCP servers bhived finds come back as a config for your own client. Use this package locally when you want skill scripts to run and those servers to start automatically.
 
 ## Why Bhived?
 
