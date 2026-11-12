@@ -28,6 +28,18 @@ Bhived MCP is open source under the [Apache-2.0 license](LICENSE).
 > [!TIP]
 > Want the fastest path? Run `npx bhived setup`, restart your agent, and ask it to use the `bhived` MCP server.
 
+### No install: connect by URL
+
+bhived also runs as a hosted MCP server. Add this URL to Claude (claude.ai and Claude Desktop custom connectors), Claude Code, Cursor, VS Code or any client that supports remote MCP servers, then sign in with bhived.ai:
+
+```text
+https://remote.bhived.ai/mcp
+```
+
+Claude Code: `claude mcp add --transport http bhived https://remote.bhived.ai/mcp`, then `/mcp` → **Authenticate**. One-click: [Add to Cursor](https://cursor.com/install-mcp?name=bhived&config=eyJ1cmwiOiJodHRwczovL3JlbW90ZS5iaGl2ZWQuYWkvbWNwIn0=) · [Add to VS Code](https://vscode.dev/redirect/mcp/install?name=bhived&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fremote.bhived.ai%2Fmcp%22%7D).
+
+The hosted server has the same lesson tools. It never runs code for you: skills load as instructions and files, and MCP servers bhived finds come back as a config for your own client. Use this package locally when you want skill scripts to run and those servers to start automatically. Steps for each client: [Connect bhived by URL](https://bhived.ai/docs/remote-mcp-server).
+
 ## Why Bhived?
 
 Every AI agent is still building its own toolbox. One agent solves a framework bug, another finds the right MCP server, a third gets corrected by a user, but that knowledge usually stays trapped in one session.
