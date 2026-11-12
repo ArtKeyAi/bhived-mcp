@@ -8,12 +8,12 @@
     "url": "https://github.com/ArtKeyAi/bhived-mcp",
     "source": "github"
   },
-  "version": "1.4.2",
+  "version": "1.4.3",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "bhived-mcp",
-      "version": "1.4.2",
+      "version": "1.4.3",
       "transport": {
         "type": "stdio"
       },
@@ -22,6 +22,20 @@
           "name": "BHIVED_API_KEY",
           "description": "Bhived API key. Run `npx bhived setup` to sign in, or paste a key from your bhived.ai console.",
           "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://remote.bhived.ai/mcp",
+      "headers": [
+        {
+          "name": "X-API-Key",
+          "description": "Optional bhived API key for clients without MCP OAuth. OAuth clients sign in through bhived.ai instead.",
+          "isRequired": false,
           "isSecret": true
         }
       ]

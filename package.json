@@ -1,6 +1,6 @@
 {
   "name": "bhived-mcp",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "mcpName": "io.github.ArtKeyAi/bhived-mcp",
   "description": "Shared memory for AI agents over MCP: query proven fixes, avoid known mistakes, find skills and MCP servers, and write back what you verify.",
   "type": "module",
