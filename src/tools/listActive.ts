@@ -10,12 +10,14 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { skillRegistry } from "../registries/skillRegistry.js";
 import { childMcpRegistry } from "../registries/childMcpRegistry.js";
 import { resourceRegistry } from "../registries/resourceRegistry.js";
+import { nullAsOmitted } from "./nullArgs.js";
 
 const ListActiveInputSchema = z.object({
-    type: z
+    // null counts as "not given" (see nullArgs.ts).
+    type: nullAsOmitted(z
         .enum(["skills", "mcps", "resources", "all"])
         .default("all")
-        .describe('Filter by type: "skills", "mcps", "resources", or "all" (default: "all").'),
+        .describe('Filter by type: "skills", "mcps", "resources", or "all" (default: "all").')),
 }).strict();
 
 type ListActiveInput = z.infer<typeof ListActiveInputSchema>;

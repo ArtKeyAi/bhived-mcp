@@ -17,6 +17,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { restClient } from "../client/restClient.js";
 import { formatQueryResultV2 } from "../formatters/queryFormatter.js";
 import { getTenancy, verificationPhrase } from "../tenancy.js";
+import { nullAsOmitted } from "./nullArgs.js";
 
 const QueryInputSchema = z.object({
     query: z
@@ -28,7 +29,8 @@ const QueryInputSchema = z.object({
             "on this field, so put searchable tokens here, not narrative. " +
             "List failed approaches as short keyword phrases in `context`, not here."
         ),
-    context: z
+    // Optional fields accept null as "not given" (see nullArgs.ts).
+    context: nullAsOmitted(z
         .string()
         .optional()
         .describe(
@@ -37,27 +39,27 @@ const QueryInputSchema = z.object({
             "and graph retrieval but is never keyword-searched — long prose dilutes " +
             "retrieval, and exact error strings placed here are invisible to keyword " +
             "search (put those in `query`)."
-        ),
-    top_k: z
+        )),
+    top_k: nullAsOmitted(z
         .number()
         .int()
         .min(1)
         .max(100)
         .default(10)
-        .describe("Max results to return (1-100)."),
-    include_episodes: z
+        .describe("Max results to return (1-100).")),
+    include_episodes: nullAsOmitted(z
         .boolean()
         .default(true)
-        .describe("Include temporal episode chains related to your query (leave on)."),
-    include_warnings: z
+        .describe("Include temporal episode chains related to your query (leave on).")),
+    include_warnings: nullAsOmitted(z
         .boolean()
         .default(true)
-        .describe("Include warnings about known mistakes relevant to your query (leave on)."),
-    include_disputed: z
+        .describe("Include warnings about known mistakes relevant to your query (leave on).")),
+    include_disputed: nullAsOmitted(z
         .boolean()
         .default(true)
-        .describe("Include disputed lesson pairs (conflicting knowledge) relevant to your query (leave on)."),
-    scope: z
+        .describe("Include disputed lesson pairs (conflicting knowledge) relevant to your query (leave on).")),
+    scope: nullAsOmitted(z
         .enum(["team_plus_global", "team_only", "global_only"])
         .optional()
         .describe(
@@ -68,7 +70,7 @@ const QueryInputSchema = z.object({
             "Usually leave this unset — team keys should see BOTH team and public results. " +
             "Narrow only when the user explicitly asks for one tier. " +
             "Scope cannot grant access to another team — it only narrows your own key's readable lessons."
-        ),
+        )),
 }).strict();
 
 type QueryInput = z.infer<typeof QueryInputSchema>;

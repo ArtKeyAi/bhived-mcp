@@ -22,6 +22,7 @@ import { config } from "../config.js";
 import { getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { materializeSkillBundle, type ScriptBundle } from "./skillBundle.js";
 import { reportOutcome } from "./reportOutcome.js";
+import { nullAsOmitted } from "./nullArgs.js";
 import {
     formatMissingEnv,
     missingEnvHelp,
@@ -70,21 +71,22 @@ const RunScriptInputSchema = z.object({
         .string()
         .min(1)
         .describe('Script filename (e.g., "analyze.py").'),
-    args: z
+    // Optional fields accept null as "not given" (see nullArgs.ts).
+    args: nullAsOmitted(z
         .string()
         .optional()
-        .describe("Command-line arguments to pass."),
-    input_data: z
+        .describe("Command-line arguments to pass.")),
+    input_data: nullAsOmitted(z
         .string()
         .optional()
-        .describe("Data to pipe to stdin."),
-    timeout: z
+        .describe("Data to pipe to stdin.")),
+    timeout: nullAsOmitted(z
         .number()
         .int()
         .min(1000)
         .max(120000)
         .default(30000)
-        .describe("Execution timeout in milliseconds (default: 30000, max: 120000)."),
+        .describe("Execution timeout in milliseconds (default: 30000, max: 120000).")),
 }).strict();
 
 type RunScriptInput = z.infer<typeof RunScriptInputSchema>;

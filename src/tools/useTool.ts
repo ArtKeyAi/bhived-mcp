@@ -9,6 +9,7 @@
 import { z } from "zod/v4";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { childMcpRegistry } from "../registries/childMcpRegistry.js";
+import { nullAsOmitted } from "./nullArgs.js";
 
 const UseToolInputSchema = z.object({
     mcp: z
@@ -19,10 +20,11 @@ const UseToolInputSchema = z.object({
         .string()
         .min(1)
         .describe("Name of the tool to call."),
-    params: z
+    // null counts as "not given" (see nullArgs.ts).
+    params: nullAsOmitted(z
         .record(z.string(), z.unknown())
         .optional()
-        .describe("Parameters to pass to the tool (as a JSON object)."),
+        .describe("Parameters to pass to the tool (as a JSON object).")),
 }).strict();
 
 type UseToolInput = z.infer<typeof UseToolInputSchema>;

@@ -17,6 +17,7 @@ import {
 } from "../formatters/writeFormatter.js";
 import type { WriteParams } from "../client/types.js";
 import { getTenancy, verificationPhrase } from "../tenancy.js";
+import { nullAsOmitted } from "./nullArgs.js";
 
 // ── Shared schemas ───────────────────────────────────────────────
 
@@ -37,69 +38,70 @@ const BaseWriteSchema = z.object({
             "Short summary (≤100 chars). Used by keyword search and the reranker only — " +
             "title terms are invisible to semantic and graph retrieval, so repeat every key term in `text`."
         ),
-    query_id: z
+    // Optional fields accept null as "not given" (see nullArgs.ts).
+    query_id: nullAsOmitted(z
         .string()
         .optional()
         .describe(
             "The query_id from your previous bhived_query call, if this relates to a query you made. " +
             "Without it this write is never linked to the results you used — the corroboration signal that grows their trust cannot fire."
-        ),
-    model: z
+        )),
+    model: nullAsOmitted(z
         .string()
         .optional()
         .describe(
             "The AI model you are (e.g. 'claude-3.5-sonnet', 'gpt-4o', 'gemini-2.0-flash')."
-        ),
+        )),
 }).strict();
 
 const InstructionSchema = BaseWriteSchema.extend({
-    supersedes_id: z
+    supersedes_id: nullAsOmitted(z
         .string()
         .optional()
         .describe(
             "Bhived ID of YOUR OWN earlier lesson this replaces. Superseding only works on lessons your key wrote — " +
             "for someone else's lesson, write a new lesson without supersedes_id (the link would be ignored)."
-        ),
-    action: z
+        )),
+    action: nullAsOmitted(z
         .enum(["new", "update"])
         .default("new")
         .describe(
             "Use 'update' with supersedes_id ONLY when correcting your own previous instruction — " +
             "this is also the only combination that bypasses the near-duplicate check (and only on lessons you authored)."
-        ),
+        )),
 }).strict();
 
 const MistakeSchema = BaseWriteSchema.extend({
-    supersedes_id: z
+    supersedes_id: nullAsOmitted(z
         .string()
         .optional()
         .describe(
             "Bhived ID of YOUR OWN earlier mistake this replaces. Only lessons your key wrote can be superseded — " +
             "to dispute someone else's lesson, write a new mistake without supersedes_id."
-        ),
-    action: z
+        )),
+    action: nullAsOmitted(z
         .enum(["new", "update"])
         .default("new")
         .describe(
             "Use 'update' with supersedes_id ONLY when correcting your own previous mistake — " +
             "it revises that lesson in place and it stays a mistake (only on lessons you authored)."
-        ),
+        )),
 }).strict();
 
 const UpdateSchema = BaseWriteSchema.extend({
-    supersedes_id: z
+    supersedes_id: nullAsOmitted(z
         .string()
         .optional()
         .describe(
             "Bhived ID of YOUR OWN previous update this replaces. Only lessons your key wrote can be superseded."
-        ),
-    action: z
+        )),
+    action: nullAsOmitted(z
         .enum(["new", "update"])
         .default("new")
         .describe(
             "Use 'update' with supersedes_id ONLY when correcting your own previous update — " +
             "this is the only combination that revises an existing lesson in place (and only on lessons you authored)."
-        ),
+        )),
 }).strict();
 
 type InstructionInput = z.infer<typeof InstructionSchema>;
